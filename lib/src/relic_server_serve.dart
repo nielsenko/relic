@@ -21,6 +21,7 @@ import 'dart:async';
 import 'dart:io' as io;
 
 import 'package:relic/relic.dart';
+import 'package:relic/src/relic_server.dart';
 
 /// Starts an [HttpServer] that listens on the specified [address] and
 /// [port] and sends requests to [handler].
@@ -37,7 +38,7 @@ import 'package:relic/relic.dart';
 /// Pass [poweredByHeader] to set the default content for "X-Powered-By",
 /// pass `null` to omit this header.
 /// {@endtemplate}
-Future<io.HttpServer> serve(
+Future<RelicHttpServer> serve(
   Handler handler,
   InternetAddress address,
   int port, {

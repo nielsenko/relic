@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:relic/relic.dart';
 import 'package:relic/src/method/request_method.dart';
+import 'package:relic/src/relic_server.dart';
 import 'package:test/test.dart';
 import 'package:relic/src/relic_server_serve.dart' as relic_server;
 
@@ -81,7 +82,7 @@ void main() {
 
 int get _serverPort => _server!.port;
 
-HttpServer? _server;
+RelicHttpServer? _server;
 
 Future<void> _scheduleServer(
   Handler handler, {

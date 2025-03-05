@@ -11,13 +11,40 @@ import 'package:relic/src/util/util.dart';
 
 import 'handler/handler.dart';
 
+abstract interface class RelicHttpServer {
+  InternetAddress get address;
+  int get port;
+  Future<void> close({bool force = false});
+  bool autoCompress = false;
+  void listen(void Function(HttpRequest request) onData);
+}
+
+final class HttpServerWrapper extends RelicHttpServer {
+  final HttpServer _httpServer;
+  HttpServerWrapper(this._httpServer);
+
+  @override
+  InternetAddress get address => _httpServer.address;
+
+  @override
+  Future<void> close({bool force = false}) => _httpServer.close(force: force);
+
+  @override
+  void listen(void Function(HttpRequest request) onData) {
+    _httpServer.listen(onData);
+  }
+
+  @override
+  int get port => _httpServer.port;
+}
+
 /// A [Server] backed by a `dart:io` [HttpServer].
 class RelicServer {
   /// The default powered by header to use for responses.
   static const String defaultPoweredByHeader = 'Relic';
 
   /// The underlying [HttpServer].
-  final HttpServer server;
+  final RelicHttpServer server;
 
   /// Whether to enforce strict header parsing.
   final bool strictHeaders;
@@ -55,7 +82,7 @@ class RelicServer {
           );
 
     return RelicServer._(
-      server,
+      HttpServerWrapper(server),
       strictHeaders: strictHeaders,
       poweredByHeader: poweredByHeader ?? defaultPoweredByHeader,
     );
