@@ -41,7 +41,8 @@ import 'package:relic/src/relic_server.dart';
 Future<RelicHttpServer> serve(
   Handler handler,
   InternetAddress address,
-  int port, {
+  int port,
+  HttpServerFactory createServer, {
   io.SecurityContext? securityContext,
   int? backlog,
   bool shared = false,

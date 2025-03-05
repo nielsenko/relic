@@ -38,6 +38,44 @@ final class HttpServerWrapper extends RelicHttpServer {
   int get port => _httpServer.port;
 }
 
+typedef HttpServerFactory = Future<RelicHttpServer> Function(
+  InternetAddress address,
+  int port, {
+  SecurityContext? securityContext,
+  int? backlog,
+  bool shared,
+  bool strictHeaders,
+  String? poweredByHeader,
+});
+
+Future<RelicHttpServer> ioHttpServerFactory(
+  InternetAddress address,
+  int port, {
+  SecurityContext? securityContext,
+  int? backlog,
+  bool shared = false,
+  bool strictHeaders = true,
+  String? poweredByHeader,
+}) async {
+  backlog ??= 0;
+  var server = securityContext == null
+      ? await HttpServer.bind(
+          address.address,
+          port,
+          backlog: backlog,
+          shared: shared,
+        )
+      : await HttpServer.bindSecure(
+          address.address,
+          port,
+          securityContext,
+          backlog: backlog,
+          shared: shared,
+        );
+
+  return HttpServerWrapper(server);
+}
+
 /// A [Server] backed by a `dart:io` [HttpServer].
 class RelicServer {
   /// The default powered by header to use for responses.
@@ -58,7 +96,8 @@ class RelicServer {
   /// Creates a server with the given parameters.
   static Future<RelicServer> createServer(
     InternetAddress address,
-    int port, {
+    int port,
+    HttpServerFactory createServer, {
     SecurityContext? securityContext,
     int? backlog,
     bool shared = false,
@@ -66,6 +105,7 @@ class RelicServer {
     String? poweredByHeader,
   }) async {
     backlog ??= 0;
+
     var server = securityContext == null
         ? await HttpServer.bind(
             address.address,
