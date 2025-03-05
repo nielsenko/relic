@@ -13,6 +13,44 @@ class BadRequestException implements Exception {
   );
 }
 
+extension RelicServerTestEx on RelicServer {
+  static final Expando<Uri> _serverUrls = Expando();
+
+  /// Fake [url] property for the [RelicServer] for testing purposes.
+  Uri get url => _serverUrls[this]!;
+  set url(Uri value) => _serverUrls[this] = value;
+
+  /// Infer a probable URL for the server.
+  ///
+  /// In general a server cannot know what URL it is being accessed by before an
+  /// actual request arrives, but for testing purposes we can infer a URL based
+  /// on the server's address.
+  Uri inferUrl() {
+    if (server.address.isLoopback) {
+      return Uri(scheme: 'http', host: 'localhost', port: server.port);
+    }
+
+    if (server.address.type == InternetAddressType.IPv6) {
+      return Uri(
+        scheme: 'http',
+        host: '[${server.address.address}]',
+        port: server.port,
+      );
+    }
+
+    return Uri(
+      scheme: 'http',
+      host: server.address.address,
+      port: server.port,
+    );
+  }
+
+  /// Infer and store the URL for the server as fake property [url].
+  associateWithInferredUrl() {
+    url = inferUrl();
+  }
+}
+
 /// Creates a [RelicServer] that listens on the loopback IPv6 address.
 /// If the IPv6 address is not available, it will listen on the loopback IPv4
 /// address.
@@ -20,17 +58,19 @@ Future<RelicServer> createServer({
   required bool strictHeaders,
 }) async {
   try {
-    return RelicServer.createServer(
+    return await RelicServer.createServer(
       InternetAddress.loopbackIPv6,
       0,
       strictHeaders: strictHeaders,
-    );
+    )
+      ..associateWithInferredUrl();
   } on SocketException catch (_) {
-    return RelicServer.createServer(
+    return await RelicServer.createServer(
       InternetAddress.loopbackIPv4,
       0,
       strictHeaders: strictHeaders,
-    );
+    )
+      ..associateWithInferredUrl();
   }
 }
 
