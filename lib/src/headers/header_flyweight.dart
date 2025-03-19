@@ -73,7 +73,7 @@ final class HeaderDecoderMulti<T extends Object> extends HeaderDecoder<T> {
 // ignore: library_private_types_in_public_api
 extension type Header<T extends Object>(_HeaderTuple<T> tuple) {
   Headers get _headers => tuple.headers;
-  HeaderFlyweight<T> get _flyweight => tuple.flyWeight;
+  HeaderFlyweight<T> get _flyweight => tuple.flyweight;
 
   String get key => _flyweight.key;
   List<String>? get raw => _flyweight.rawFrom(_headers);
