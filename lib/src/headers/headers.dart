@@ -297,7 +297,8 @@ class Headers extends UnmodifiableMapView<String, List<String>> {
     throw UnimplementedError(); // TODO: Should die
   }
 
-  headers.lastModified == null;
-  headers.lastModified_.isValid;
-  headers.lastModified_.value;
+  /// Convert headers to a map
+  /// This will include all headers, if a header is null then the value of the
+  /// header was not set.
+  Map<String, Object?> toMap() => this;
 }
