@@ -11,14 +11,14 @@ void main() {
     });
 
     test('when custom headers are added then they are included', () {
-      var headers = Headers.from({
+      var headers = Headers.fromMap({
         'X-Custom-Header': ['value']
       });
       expect(headers['x-custom-header'], equals(['value']));
     });
 
     test('when custom headers are removed then they are no longer present', () {
-      var headers = Headers.from({
+      var headers = Headers.fromMap({
         'X-Custom-Header': ['value']
       });
       headers = headers.transform((mh) => mh.remove('X-Custom-Header'));
@@ -26,7 +26,7 @@ void main() {
     });
 
     test('when accessing headers then they are case insensitive', () {
-      var headers = Headers.from({
+      var headers = Headers.fromMap({
         'Case-Insensitive': ['value']
       });
       expect(headers['case-insensitive'], contains('value'));
@@ -35,7 +35,7 @@ void main() {
 
     test('when headers are copied then modifications are correctly applied',
         () {
-      var headers = Headers.from({
+      var headers = Headers.fromMap({
         'Initial-Header': ['initial']
       });
       var copiedHeaders = headers.transform((mh) {
