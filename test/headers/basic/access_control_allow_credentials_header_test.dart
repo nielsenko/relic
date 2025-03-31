@@ -156,13 +156,10 @@ void main() {
             headers: {'access-control-allow-credentials': ''},
           );
 
-          expect(headers.accessControlAllowCredentials_.valueOrNullIfInvalid,
-              isNull);
-          expect(
-              () => Headers.accessControlAllowCredentials
-                  .getValueFrom(external)[headers]
-                  .value,
-              throwsA(isA<InvalidHeaderException>()));
+          final header = Headers.accessControlAllowCredentials[headers];
+          expect(header.valueOrNullIfInvalid, isNull);
+          expect(() => header.valueOrNull, throwsInvalidHeader);
+          expect(() => header.value, throwsInvalidHeader);
         },
       );
     });

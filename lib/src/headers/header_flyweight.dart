@@ -19,32 +19,36 @@ final class HeaderFlyweight<T extends Object> {
 
   const HeaderFlyweight(this.key, this.decode);
 
-  Iterable<String>? rawFrom(HeadersBase external) => external[key];
-
-  V getValueFrom<V extends T?>(
+  T? getValueOrNullFrom(
     HeadersBase external, {
-    V Function(Exception) orElse = _raise,
+    T? Function(Exception)? orElse,
   }) {
     try {
-      try {
-        var result = _cache[external];
-        if (result != null) return result as V;
-        final raw = rawFrom(external);
-        result = _cache[external] ??= // update cache
-            raw == null ? null : decode(raw);
-        return result as V;
-      } on Exception catch (e) {
-        return orElse(e);
-      }
-    } catch (o) {
-      _throwException(o, key: key);
+      var result = _cache[external] as T?;
+      if (result != null) return result; // found in cache
+
+      final raw = external[key];
+      if (raw == null) return null; // nothing to decode
+
+      result = decode(raw);
+      _cache[external] = result;
+      return result;
+    } on Exception catch (e) {
+      if (orElse == null) _throwException(e, key: key);
+      return orElse(e);
     }
   }
 
-  bool isSetIn(HeadersBase external) => rawFrom(external) != null;
+  T getValueFrom(
+    HeadersBase external, {
+    T Function(Exception?) orElse = _raise,
+  }) =>
+      getValueOrNullFrom(external, orElse: orElse) ?? orElse(null);
+
+  bool isSetIn(HeadersBase external) => external[key] != null;
 
   bool isValidIn(HeadersBase external) =>
-      getValueFrom<T?>(external, orElse: _returnNull) != null;
+      getValueOrNullFrom(external, orElse: _returnNull) != null;
 
   Header<T> operator [](HeadersBase external) =>
       Header((flyweight: this, headers: external));
@@ -56,8 +60,8 @@ final class HeaderFlyweight<T extends Object> {
   void removeFrom(MutableHeaders external) => external.remove(key);
 }
 
-Never _raise(Exception ex) => throw ex;
-Null _returnNull(Exception ex) => null;
+Never _raise(Exception? ex) => throw ex ?? ArgumentError();
+T? _returnNull<T>(Exception? ex) => null;
 
 sealed class HeaderDecoder<T extends Object> {
   const HeaderDecoder();
@@ -93,17 +97,16 @@ extension type Header<T extends Object>(_HeaderTuple<T> tuple) {
   HeaderFlyweight<T> get _flyweight => tuple.flyweight;
 
   String get key => _flyweight.key;
-  Iterable<String>? get raw => _flyweight.rawFrom(_headers);
+  Iterable<String>? get raw => _headers[_flyweight.key];
 
   bool get isSet => _flyweight.isSetIn(_headers);
   bool get isValid => _flyweight.isValidIn(_headers);
 
-  T? get valueOrNullIfInvalid => this(orElse: _returnNull);
+  T? call() => _flyweight.getValueOrNullFrom(_headers);
+  T? get valueOrNullIfInvalid =>
+      _flyweight.getValueOrNullFrom(_headers, orElse: _returnNull);
   T? get valueOrNull => this();
-  T get value => this(); // magic of type inference
-
-  V call<V extends T?>({V Function(Exception) orElse = _raise}) =>
-      _flyweight.getValueFrom<V>(_headers, orElse: orElse);
+  T get value => _flyweight.getValueFrom(_headers);
 
   void set(T? value) =>
       _flyweight.setValueOn(_headers as MutableHeaders, value);

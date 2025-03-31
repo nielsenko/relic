@@ -1,6 +1,9 @@
 import 'package:relic/relic.dart';
 import 'package:relic/src/headers/standard_headers_extensions.dart';
 import 'package:test/test.dart';
+import 'package:meta/meta.dart';
+
+import 'headers_test_utils.dart';
 
 void main() {
   group('Given Headers class', () {
@@ -79,5 +82,63 @@ void main() {
       headers = headers.transform((mh) => mh.date = newDate);
       expect(headers.date, equals(newDate));
     });
+  });
+
+  const invalid = ['invalid'];
+  parameterizedGroup(
+    (v) => 'Given a "${v.key}" header with a raw value: "$invalid"',
+    variants: {
+      Headers.date,
+    },
+    (v) {
+      late final header = v[Headers.fromMap({v.key: invalid})];
+
+      singleTest('then isSet is true', header.isSet, isTrue);
+      singleTest('then isValid is false', header.isValid, isFalse);
+      singleTest(
+        'then valueOrNullIfInvalid is null',
+        header.valueOrNullIfInvalid,
+        isNull,
+      );
+      singleTest(
+        'then valueOrNull throws',
+        () => header.valueOrNull,
+        throwsInvalidHeader,
+      );
+      singleTest('then value throws', () => header.value, throwsInvalidHeader);
+    },
+  );
+}
+
+@isTestGroup
+void parameterizedGroup<T>(
+  String Function(T) descriptionBuilder,
+  void Function(T) body, {
+  required Iterable<T> variants,
+}) {
+  for (var v in variants) {
+    body(v);
+  }
+}
+
+@isTest
+void parameterizedTest<T>(
+  String Function(T) descriptionBuilder,
+  void Function(T) body, {
+  required Iterable<T> variants,
+}) {
+  for (var v in variants) {
+    body(v);
+  }
+}
+
+@isTest
+void singleTest(
+  String description,
+  dynamic actual,
+  dynamic expected,
+) {
+  test(description, () {
+    expect(actual, expected);
   });
 }

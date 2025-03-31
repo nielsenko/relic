@@ -36,4 +36,4 @@ final _request = Request(RequestMethod.get, localhostUri);
 final localhostUri = Uri.parse('http://localhost/');
 
 final isOhNoStateError =
-    isA<StateError>().having((p0) => p0.message, 'message', 'oh no');
+    isA<StateError>().having((e) => e.message, 'message', 'oh no');
