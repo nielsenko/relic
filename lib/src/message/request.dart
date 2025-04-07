@@ -11,6 +11,8 @@ import 'message.dart';
 
 part '../hijack/hijack.dart';
 
+class ConnectionInfo {}
+
 /// An HTTP request to be processed by a Relic Server application.
 class Request extends Message {
   /// The URL path from the current handler to the requested resource, relative
@@ -51,8 +53,8 @@ class Request extends Message {
   /// The original [Uri] for the request.
   final Uri requestedUri;
 
-  /// The [HttpConnectionInfo] info associated with this request, if available.
-  final io.HttpConnectionInfo? connectionInfo;
+  /// The [ConnectionInfo] info associated with this request, if available.
+  final ConnectionInfo? connectionInfo;
 
   /// The callback wrapper for hijacking this request.
   ///
@@ -121,7 +123,7 @@ class Request extends Message {
   Request(
     final RequestMethod method,
     final Uri requestedUri, {
-    final io.HttpConnectionInfo? connectionInfo,
+    final ConnectionInfo? connectionInfo,
     final String? protocolVersion,
     final Headers? headers,
     final String? handlerPath,
@@ -141,31 +143,6 @@ class Request extends Message {
           context: context,
           onHijack: onHijack == null ? null : _OnHijack(onHijack),
         );
-
-  /// Creates a new [Request] from an [io.HttpRequest].
-  ///
-  /// [strictHeaders] determines whether to strictly enforce header parsing
-  /// rules. [poweredByHeader] sets the value of the `X-Powered-By` header.
-  factory Request.fromHttpRequest(
-    final io.HttpRequest request, {
-    final bool strictHeaders = false,
-    final String? poweredByHeader,
-  }) {
-    return Request(
-      RequestMethod.parse(request.method),
-      request.requestedUri,
-      connectionInfo: request.connectionInfo,
-      protocolVersion: request.protocolVersion,
-      headers: Headers.fromHttpRequest(
-        request,
-        strict: strictHeaders,
-        xPoweredBy: poweredByHeader,
-      ),
-      body: Body.fromHttpRequest(request),
-      onHijack: (final callback) => onHijack(request.response, callback),
-      context: {},
-    );
-  }
 
   /// This constructor has the same signature as [Request.new] except that
   /// accepts [onHijack] as [_OnHijack].

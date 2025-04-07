@@ -3,7 +3,6 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 import 'package:relic/relic.dart';
-import 'package:relic/src/method/request_method.dart';
 import 'package:relic/src/relic_server_serve.dart' as relic_server;
 import 'package:test/test.dart';
 

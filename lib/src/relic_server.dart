@@ -1,15 +1,48 @@
 import 'dart:async';
-import 'dart:io';
+import 'dart:io' as io;
 
 import 'body/body.dart';
 import 'handler/handler.dart';
 import 'headers/exception/header_exception.dart';
 import 'headers/standard_headers_extensions.dart';
 import 'hijack/exception/hijack_exception.dart';
+import 'io/request.dart'; // TODO:
+import 'io/response.dart';
 import 'logger/logger.dart';
 import 'message/request.dart';
 import 'message/response.dart';
 import 'util/util.dart';
+
+abstract class Adaptor {
+  Stream<Request> get requests;
+  Sink<Response> get responses;
+
+  Future<void> start();
+  Future<void> close();
+}
+
+class IOHttpServerAdaptor implements Adaptor {
+  final io.HttpServer server;
+  final _controller = StreamController<Response>();
+
+  @override
+  Stream<Request> get requests => server.map((final r) => fromHttpRequest(r));
+
+  @override
+  Sink<Response> get responses => _controller.sink;
+
+  @override
+  Future<void> start() async {
+    //_controller.stream.listen((final r) => r.writeHttpResponse());
+  }
+
+  @override
+  Future<void> close() async {
+    await server.close();
+  }
+
+  IOHttpServerAdaptor(this.server);
+}
 
 /// A [Server] backed by a `dart:io` [HttpServer].
 class RelicServer {
@@ -17,7 +50,7 @@ class RelicServer {
   static const String defaultPoweredByHeader = 'Relic';
 
   /// The underlying [HttpServer].
-  final HttpServer server;
+  final io.HttpServer server;
 
   /// Whether to enforce strict header parsing.
   final bool strictHeaders;
@@ -30,9 +63,9 @@ class RelicServer {
 
   /// Creates a server with the given parameters.
   static Future<RelicServer> createServer(
-    final InternetAddress address,
+    final io.InternetAddress address,
     final int port, {
-    final SecurityContext? securityContext,
+    final io.SecurityContext? securityContext,
     int? backlog,
     final bool shared = false,
     final bool strictHeaders = true,
@@ -40,13 +73,13 @@ class RelicServer {
   }) async {
     backlog ??= 0;
     final server = securityContext == null
-        ? await HttpServer.bind(
+        ? await io.HttpServer.bind(
             address.address,
             port,
             backlog: backlog,
             shared: shared,
           )
-        : await HttpServer.bindSecure(
+        : await io.HttpServer.bindSecure(
             address.address,
             port,
             securityContext,
@@ -98,7 +131,7 @@ class RelicServer {
   }
 
   /// Handles incoming HTTP requests, passing them to the handler.
-  Future<void> _handleRequest(final HttpRequest request) async {
+  Future<void> _handleRequest(final io.HttpRequest request) async {
     final handler = _handler;
     if (handler == null) {
       throw StateError(
@@ -109,7 +142,7 @@ class RelicServer {
     // Parsing and converting the HTTP request to a relic request
     Request relicRequest;
     try {
-      relicRequest = Request.fromHttpRequest(
+      relicRequest = fromHttpRequest(
         request,
         strictHeaders: strictHeaders,
         poweredByHeader: poweredByHeader,

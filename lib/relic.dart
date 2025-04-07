@@ -22,9 +22,13 @@ export 'src/headers/typed/typed_headers.dart';
 /// Hijack related exports
 export 'src/hijack/exception/hijack_exception.dart' show HijackException;
 
+/// Static handler export
+export 'src/io/static/static_handler.dart';
+
 /// Message related exports
 export 'src/message/request.dart' show Request;
 export 'src/message/response.dart' show Response;
+export 'src/method/request_method.dart' show RequestMethod;
 export 'src/middleware/middleware.dart' show Middleware, createMiddleware;
 export 'src/middleware/middleware_extensions.dart' show MiddlewareExtensions;
 
@@ -32,6 +36,3 @@ export 'src/middleware/middleware_extensions.dart' show MiddlewareExtensions;
 export 'src/middleware/middleware_logger.dart' show logRequests;
 export 'src/relic_server.dart' show RelicServer;
 export 'src/relic_server_serve.dart' show serve;
-
-/// Static handler export
-export 'src/static/static_handler.dart';

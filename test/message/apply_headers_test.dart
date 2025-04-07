@@ -6,8 +6,8 @@ import 'dart:typed_data';
 import 'package:http_parser/http_parser.dart';
 import 'package:mockito/mockito.dart';
 import 'package:relic/relic.dart';
-import 'package:relic/src/extensions/http_response_extension.dart';
 import 'package:relic/src/headers/standard_headers_extensions.dart';
+import 'package:relic/src/io/extensions/http_response_extension.dart';
 import 'package:test/test.dart';
 
 class HttpHeadersMock extends Mock implements HttpHeaders {
