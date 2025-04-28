@@ -39,22 +39,21 @@ typedef Middleware = Handler Function(Handler innerHandler);
 /// create a new response object.
 ///
 /// If provided, [onError] receives errors thrown by the inner handler. It
-/// does not receive errors thrown by [onRequest] or [onResponse], nor
-/// does it receive [HijackException]s. It can either return a new response or
-/// throw an error.
+/// does not receive errors thrown by [onRequest] or [onResponse]. It can
+/// either return a new response or throw an error.
 Middleware createMiddleware({
-  FutureOr<Response?> Function(Request)? onRequest,
-  FutureOr<Response> Function(Response)? onResponse,
+  final FutureOr<Response?> Function(Request)? onRequest,
+  final FutureOr<Response> Function(Response)? onResponse,
   final FutureOr<Response> Function(Object error, StackTrace)? onError,
 }) {
-  onRequest ??= (final request) => null;
-  onResponse ??= (final response) => response;
+  final req = onRequest ?? (final request) => null;
+  final res = onResponse ?? (final response) => response;
 
   return (final innerHandler) {
     return (final requestCtx) async {
       if (requestCtx is! RespondableContext) return requestCtx;
       final ctx = requestCtx as RespondableContext; // why is this needed
-      var response = await onRequest!(ctx.request);
+      var response = await req(ctx.request);
       if (response != null) return ctx.withResponse(response);
       late ResponseContext responseCtx;
       try {
@@ -67,7 +66,7 @@ Middleware createMiddleware({
         }
         rethrow;
       }
-      response = await onResponse!(responseCtx.response);
+      response = await res(responseCtx.response);
       return responseCtx.withResponse(response);
     };
   };
