@@ -1,27 +1,38 @@
 import 'dart:collection';
 
-/// A simple Least Recently Used (LRU) cache implementation.
+/// A Least Recently Used (LRU) cache implementation. Using double buffering to
+/// reduce overhead (at the expense of precision).
 ///
-/// Keeps a fixed number of items ([_maxSize]). When the cache is full and a new
+/// Keeps a fixed number of items ([_coldCapacity]). When the cache is full and a new
 /// item is added, the least recently used item is evicted. Accessing an item
 /// (get or update) marks it as the most recently used.
 final class LruCache<K, V> {
-  final int _bufferSize;
-  final int _maxSize;
+  final int _hotCapacity;
+  final int _coldCapacity;
 
-  var _hotBuffer = <K, V>{};
+  var _hot = HashMap<K, V>();
   // ignore: prefer_collection_literals
-  final _cache = LinkedHashMap<K, V>();
+  final _cold = LinkedHashMap<K, V>();
+
+  LruCache._(this._hotCapacity, this._coldCapacity) {
+    RangeError.checkNotNegative(_coldCapacity, '_coldCapacity');
+    RangeError.checkValueInInterval(
+      _hotCapacity,
+      0,
+      _coldCapacity,
+      '_hotCapacity',
+    );
+    // print('_hotCapacity: $_hotCapacity, _coldCapacity: $_coldCapacity');
+  }
 
   /// Creates an LRU cache with the specified maximum size.
   ///
-  /// Throws an [ArgumentError] if [_maxSize] is not positive.
-  LruCache(this._maxSize, {final int? bufferSize})
-      : _bufferSize = bufferSize ?? _maxSize ~/ 5 // default to 20%
-  {
-    if (_maxSize <= 0) {
-      throw ArgumentError('Cache size must be positive');
-    }
+  /// Throws an [RangeError] if [maxSize] is not positive.
+  factory LruCache(final int maxSize, [final double hotRatio = 0.1]) {
+    RangeError.checkNotNegative(maxSize, 'maxSize');
+    final hotCapacity = (maxSize * hotRatio).toInt();
+    final coldCapacity = maxSize - hotCapacity;
+    return LruCache._(hotCapacity, coldCapacity);
   }
 
   /// Retrieves the value associated with [key].
@@ -30,17 +41,17 @@ final class LruCache<K, V> {
   /// recently used item.
   V? operator [](final K key) {
     // Check hot buffer first (no reordering needed)
-    final hotValue = _hotBuffer[key];
+    final hotValue = _hot[key];
     if (hotValue != null) {
       return hotValue;
     }
 
-    final value = _cache.remove(key);
-    if (value != null) {
-      // Promote to hot buffer without modifying cold buffer order
-      _hotBuffer[key] = value;
+    final coldValue = _cold[key];
+    if (coldValue != null) {
+      // Promote to hot buffer without modifying cache
+      this[key] = coldValue;
     }
-    return value;
+    return coldValue;
   }
 
   /// Associates [value] with [key] in the cache.
@@ -50,31 +61,32 @@ final class LruCache<K, V> {
   /// capacity, the least recently used item is evicted.
   void operator []=(final K key, final V value) {
     // Always put in hot buffer first
-    _hotBuffer[key] = value;
+    _hot[key] = value;
 
     // If hot buffer gets too big, flush to cold
-    if (_hotBuffer.length >= _bufferSize) {
-      _trim();
+    if (_hot.length >= _hotCapacity) {
+      _flushHotToCold();
     }
   }
 
-  void _trim() {
+  void _flushHotToCold() {
     // Move all hot items as recent item in cache
-    for (final entry in _hotBuffer.entries) {
-      _cache.remove(entry.key); // if present (to mark as recent)
-      _cache[entry.key] = entry.value;
+    for (final entry in _hot.entries) {
+      _cold.remove(entry.key);
+      _cold[entry.key] = entry.value;
     }
 
     // Create new hot buffer. GC can claim old one in one go
-    _hotBuffer = {};
+    _hot = HashMap<K, V>();
 
-    // Evict oldest entries if we've exceeded max size
-    var keysToRemove = _cache.length - _maxSize;
+    // Trim by evicting oldest entries from cold cache,
+    // if we've exceeded max size
+    var keysToRemove = _cold.length - _coldCapacity;
     while (keysToRemove-- > 0) {
-      _cache.remove(_cache.keys.first);
+      _cold.remove(_cold.keys.first);
     }
   }
 
   /// Returns the current number of items in the cache.
-  int get length => _hotBuffer.length + _cache.length;
+  int get length => _hot.length + _cold.length;
 }
