@@ -14,12 +14,28 @@ Future<void> main() async {
   // but if you are mostly concerned with converting [Request]s to [Response]s
   // (known as a [Responder] in relic parlor) you can use [respondWith] to
   // wrap a [Responder] into a [Handler]
-  final handler = const Pipeline()
+
+  final body = Body.fromString("Sorry, that doesn't compute");
+  final inner = respondWith((final _) => Response.notFound(body: body));
+
+  // What is really goind on, whatever syntax we use
+  final handler0 = logRequests()(routeWith(router)(inner));
+
+  final handler1 = logRequests() // same, but use compose to avoid nesting
+      .compose(routeWith(router))
+      .apply(inner);
+
+  final handler2 = inner // same, but build inside-out
+      .pipe(routeWith(router))
+      .pipe(logRequests());
+
+  // same result, less flexible approach (inherited from shelf)
+  final handler3 = const Pipeline()
       .addMiddleware(logRequests())
       .addMiddleware(routeWith(router))
-      .addHandler(respondWith((final _) => Response.notFound(
-          body: Body.fromString("Sorry, that doesn't compute"))));
+      .addHandler(inner);
 
+  final handler = handler3; // <-- choose
   // Start the server with the handler
   await serve(handler, InternetAddress.anyIPv4, 8080);
 
