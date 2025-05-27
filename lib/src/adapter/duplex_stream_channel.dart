@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:typed_data';
+import 'package:async/async.dart';
 import 'package:stream_channel/stream_channel.dart';
 
 /// An abstract class representing a bi-directional communication channel.
@@ -23,11 +24,30 @@ abstract class DuplexStreamChannel
   Future<void> close([final int? closeCode, final String? closeReason]);
 }
 
-/// A sealed class representing the types of messages that can be sent or received
-/// over a [DuplexStreamChannel].
-///
-/// This allows for type-safe handling of different message formats,
-/// like binary or text.
+final class DuplexStream<T> extends DelegatingStream<T>
+    implements Stream<T>, StreamSink<T> {
+  final StreamSink<T> _sink;
+
+  DuplexStream(super.stream, this._sink);
+
+  @override
+  void add(final T data) => _sink.add(data);
+
+  @override
+  void addError(final Object error, [final StackTrace? stackTrace]) {
+    _sink.addError(error, stackTrace);
+  }
+
+  @override
+  Future<void> addStream(final Stream<T> stream) => _sink.addStream(stream);
+
+  @override
+  Future<void> close() => _sink.close();
+
+  @override
+  Future<void> get done => _sink.done;
+}
+
 sealed class Payload {
   const Payload();
 }
