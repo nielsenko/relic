@@ -3,8 +3,7 @@ import 'package:test/test.dart';
 
 void main() {
   group('Pipe Extension', () {
-    test(
-        'Given a value and a function, '
+    test('Given a value and a function, '
         'when the pipe extension is used, '
         'then the function should be applied to the value', () {
       // Arrange
@@ -18,8 +17,7 @@ void main() {
       expect(result, equals(7));
     });
 
-    test(
-        'Given a string and a sequence of string operations, '
+    test('Given a string and a sequence of string operations, '
         'when piped together, '
         'then the correct final string is produced', () {
       // Arrange
@@ -37,8 +35,7 @@ void main() {
   });
 
   group('Compose Extension', () {
-    test(
-        'Given two functions, '
+    test('Given two functions, '
         'when they are composed, '
         'then the resulting function should be their composition', () {
       // Arrange
@@ -46,17 +43,18 @@ void main() {
       int multiplyByThree(final int x) => x * 3;
 
       // Act
-      final composedFunction =
-          multiplyByThree.compose(addTwo); // multiplyByThree(addTwo(x))
+      final composedFunction = multiplyByThree.compose(
+        addTwo,
+      ); // multiplyByThree(addTwo(x))
       final result = composedFunction(
-          5); // multiplyByThree(addTwo(5)) = multiplyByThree(7) = 21
+        5,
+      ); // multiplyByThree(addTwo(5)) = multiplyByThree(7) = 21
 
       // Assert
       expect(result, equals(21));
     });
 
-    test(
-        'Given three functions for string manipulation, '
+    test('Given three functions for string manipulation, '
         'when composed sequentially, '
         'then the result is the correct transformation', () {
       // Arrange
@@ -80,8 +78,7 @@ void main() {
 
   group('Apply Extensions', () {
     group('Apply1', () {
-      test(
-          'Given a function of one argument, '
+      test('Given a function of one argument, '
           'when apply is used, '
           'then the function is called with the argument', () {
         // Arrange
@@ -98,74 +95,76 @@ void main() {
 
     group('Apply2', () {
       test(
-          'Given a function of two arguments and one argument, '
-          'when apply is used, '
-          'then it should return a function that takes the second argument',
-          () {
-        // Arrange
-        int func(final int a, final int b) => a + b;
-        const arg1 = 10;
-        const arg2 = 5;
+        'Given a function of two arguments and one argument, '
+        'when apply is used, '
+        'then it should return a function that takes the second argument',
+        () {
+          // Arrange
+          int func(final int a, final int b) => a + b;
+          const arg1 = 10;
+          const arg2 = 5;
 
-        // Act
-        final partiallyApplied = func.apply(arg1);
-        final result = partiallyApplied(arg2);
+          // Act
+          final partiallyApplied = func.apply(arg1);
+          final result = partiallyApplied(arg2);
 
-        // Assert
-        expect(result, equals(15));
-      });
+          // Assert
+          expect(result, equals(15));
+        },
+      );
     });
 
     group('Apply3', () {
       test(
-          'Given a function of three arguments and one argument, '
-          'when apply is used, '
-          'then it should return a function that takes the remaining two arguments',
-          () {
-        // Arrange
-        String func(final String a, final String b, final String c) =>
-            '$a $b $c';
-        const arg1 = 'Hello';
-        const arg2 = 'World';
-        const arg3 = '!';
+        'Given a function of three arguments and one argument, '
+        'when apply is used, '
+        'then it should return a function that takes the remaining two arguments',
+        () {
+          // Arrange
+          String func(final String a, final String b, final String c) =>
+              '$a $b $c';
+          const arg1 = 'Hello';
+          const arg2 = 'World';
+          const arg3 = '!';
 
-        // Act
-        final partiallyApplied = func.apply(arg1);
-        final result = partiallyApplied(arg2, arg3);
+          // Act
+          final partiallyApplied = func.apply(arg1);
+          final result = partiallyApplied(arg2, arg3);
 
-        // Assert
-        expect(result, equals('Hello World !'));
-      });
+          // Assert
+          expect(result, equals('Hello World !'));
+        },
+      );
     });
 
     group('Apply4', () {
       test(
-          'Given a function of four arguments and one argument, '
-          'when apply is used, '
-          'then it should return a function that takes the remaining three arguments',
-          () {
-        // Arrange
-        int func(final int a, final int b, final int c, final int d) =>
-            a + b + c + d;
-        const arg1 = 1;
-        const arg2 = 2;
-        const arg3 = 3;
-        const arg4 = 4;
+        'Given a function of four arguments and one argument, '
+        'when apply is used, '
+        'then it should return a function that takes the remaining three arguments',
+        () {
+          // Arrange
+          int func(final int a, final int b, final int c, final int d) =>
+              a + b + c + d;
+          const arg1 = 1;
+          const arg2 = 2;
+          const arg3 = 3;
+          const arg4 = 4;
 
-        // Act
-        final partiallyApplied = func.apply(arg1);
-        final result = partiallyApplied(arg2, arg3, arg4);
+          // Act
+          final partiallyApplied = func.apply(arg1);
+          final result = partiallyApplied(arg2, arg3, arg4);
 
-        // Assert
-        expect(result, equals(10));
-      });
+          // Assert
+          expect(result, equals(10));
+        },
+      );
     });
   });
 
   group('Pack Extensions', () {
     group('Pack1', () {
-      test(
-          'Given a function of one argument, '
+      test('Given a function of one argument, '
           'when pack is used, '
           'then it should return a function that takes a 1-tuple', () {
         // Arrange
@@ -182,8 +181,7 @@ void main() {
     });
 
     group('Pack2', () {
-      test(
-          'Given a function of two arguments, '
+      test('Given a function of two arguments, '
           'when pack is used, '
           'then it should return a function that takes a 2-tuple', () {
         // Arrange
@@ -200,8 +198,7 @@ void main() {
     });
 
     group('Pack3', () {
-      test(
-          'Given a function of three arguments, '
+      test('Given a function of three arguments, '
           'when pack is used, '
           'then it should return a function that takes a 3-tuple', () {
         // Arrange
@@ -219,8 +216,7 @@ void main() {
     });
 
     group('Pack4', () {
-      test(
-          'Given a function of four arguments, '
+      test('Given a function of four arguments, '
           'when pack is used, '
           'then it should return a function that takes a 4-tuple', () {
         // Arrange
