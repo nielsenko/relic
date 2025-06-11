@@ -4,7 +4,7 @@ import 'package:test/test.dart';
 
 RequestContext _createContextInstance([final String uriSuffix = 'test']) {
   final request = Request(Method.get, Uri.parse('http://test.com/$uriSuffix'));
-  return request.toContext(Object());
+  return buildNewContext(request);
 }
 
 void main() {
