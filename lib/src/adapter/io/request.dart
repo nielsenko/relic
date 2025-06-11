@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:io' as io;
 
 import '../../../relic.dart';
+import '../connection_info.dart';
+import '../ip_address.dart';
 
 /// Creates a new [Request] from an [io.HttpRequest].
 ///
@@ -19,6 +21,15 @@ Request fromHttpRequest(
     headers: headersFromHttpRequest(request),
     body: bodyFromHttpRequest(request),
   );
+}
+
+ConnectionInfo connectionInfoFromHttpRequest(final io.HttpRequest request) {
+  final info = request.connectionInfo;
+  if (info == null) return ConnectionInfo.unknown();
+  return ConnectionInfo(
+      remoteAddress: IPAddress.fromBytes(info.remoteAddress.rawAddress),
+      remotePort: info.remotePort,
+      localPort: info.localPort);
 }
 
 Headers headersFromHttpRequest(final io.HttpRequest request) {
