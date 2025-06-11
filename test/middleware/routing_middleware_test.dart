@@ -40,7 +40,7 @@ void main() {
 
         router.add(Method.get, '/users/:id', testHandler);
 
-        final initialCtx = _FakeRequest('/users/123').toContext(Object());
+        final initialCtx = buildNewContext(_FakeRequest('/users/123'));
         final resultingCtx = await middleware(
             respondWith((final _) => Response(404)))(initialCtx);
 
@@ -63,7 +63,7 @@ void main() {
 
         router.add(Method.get, '/users', testHandler);
 
-        final initialCtx = _FakeRequest('/users').toContext(Object());
+        final initialCtx = buildNewContext(_FakeRequest('/users'));
         final resultingCtx = await middleware(
             respondWith((final _) => Response(404)))(initialCtx);
 
@@ -86,7 +86,7 @@ void main() {
           return ctx.respond(Response(404));
         }
 
-        final initialCtx = _FakeRequest('/nonexistent').toContext(Object());
+        final initialCtx = buildNewContext(_FakeRequest('/nonexistent'));
         final resultingCtx = await middleware(nextHandler)(initialCtx);
 
         expect(nextCalled, isTrue);
@@ -132,7 +132,7 @@ void main() {
         final pipelineHandler =
             pipeline.addHandler(respondWith((final _) => Response(404)));
 
-        final initialCtx = _FakeRequest('/router1/apple').toContext(Object());
+        final initialCtx = buildNewContext(_FakeRequest('/router1/apple'));
         final resultingCtx = await pipelineHandler(initialCtx);
         final response = (resultingCtx as ResponseContext).response;
 
@@ -164,7 +164,7 @@ void main() {
         final pipelineHandler =
             pipeline.addHandler(respondWith((final _) => Response(404)));
 
-        final initialCtx = _FakeRequest('/router2/banana').toContext(Object());
+        final initialCtx = buildNewContext(_FakeRequest('/router2/banana'));
         final resultingCtx = await pipelineHandler(initialCtx);
         final response = (resultingCtx as ResponseContext).response;
 
@@ -196,7 +196,7 @@ void main() {
           return Response(404);
         }));
 
-        final initialCtx = _FakeRequest('/neither/nor').toContext(Object());
+        final initialCtx = buildNewContext(_FakeRequest('/neither/nor'));
         final resultingCtx = await pipelineHandler(initialCtx);
         final response = (resultingCtx as ResponseContext).response;
 
@@ -234,7 +234,7 @@ void main() {
             .addHandler(respondWith((final _) => Response(404)));
 
         final initialCtx =
-            _FakeRequest('/resource/abc/details/xyz').toContext(Object());
+            buildNewContext(_FakeRequest('/resource/abc/details/xyz'));
         final resultingCtx = await pipelineHandler(initialCtx);
         final response = (resultingCtx as ResponseContext).response;
 
@@ -277,8 +277,8 @@ void main() {
             .addMiddleware(routeWith(mainRouter))
             .addHandler(respondWith((final _) => Response(404)));
 
-        final initialCtx = _FakeRequest('/base/b123/i456/action/doSomething')
-            .toContext(Object());
+        final initialCtx =
+            buildNewContext(_FakeRequest('/base/b123/i456/action/doSomething'));
         final resultingCtx = await pipelineHandler(initialCtx);
         final response = (resultingCtx as ResponseContext).response;
 
@@ -315,7 +315,7 @@ void main() {
             .addMiddleware(routeWith(mainRouter))
             .addHandler(respondWith((final _) => Response(404)));
 
-        final initialCtx = _FakeRequest('/123/sub/456/end').toContext(Object());
+        final initialCtx = buildNewContext(_FakeRequest('/123/sub/456/end'));
         final resultingCtx = await pipeline(initialCtx);
         final response = (resultingCtx as ResponseContext).response;
 
@@ -341,7 +341,7 @@ void main() {
             respondWith((final _) => Response.ok(body: Body.fromString(s))),
       );
 
-      final ctx = _FakeRequest('/').toContext(Object());
+      final ctx = buildNewContext(_FakeRequest('/'));
       final resCtx =
           await mw(respondWith((final _) => Response.notFound()))(ctx)
               as ResponseContext;
@@ -365,10 +365,9 @@ void main() {
           method = req.method;
           return Response.ok();
         })));
-      final request = _FakeRequest('/', method: v);
+      final ctx = buildNewContext(_FakeRequest('/', method: v));
       final newCtx =
-          await middleware(respondWith((final _) => Response.notFound()))(
-              request.toContext(Object()));
+          await middleware(respondWith((final _) => Response.notFound()))(ctx);
       expect(newCtx, isA<ResponseContext>());
       final response = (newCtx as ResponseContext).response;
       expect(response.statusCode, 200);
@@ -392,7 +391,7 @@ void main() {
       router.add(Method.get, '/users', respondWith((final _) => Response(200)));
 
       final initialCtx =
-          _FakeRequest('/users', method: Method.post).toContext(Object());
+          buildNewContext(_FakeRequest('/users', method: Method.post));
       final resultingCtx =
           await middleware(respondWith((final _) => Response(404)))(initialCtx);
 
@@ -408,7 +407,7 @@ void main() {
       router.add(Method.get, '/users', respondWith((final _) => Response(200)));
 
       final initialCtx =
-          _FakeRequest('/users', method: Method.post).toContext(Object());
+          buildNewContext(_FakeRequest('/users', method: Method.post));
       final resultingCtx =
           await middleware(respondWith((final _) => Response(404)))(initialCtx);
 
@@ -427,7 +426,7 @@ void main() {
           Method.post, '/users', respondWith((final _) => Response(201)));
 
       final initialCtx =
-          _FakeRequest('/users', method: Method.put).toContext(Object());
+          buildNewContext(_FakeRequest('/users', method: Method.put));
       final resultingCtx =
           await middleware(respondWith((final _) => Response(404)))(initialCtx);
 
@@ -448,7 +447,7 @@ void main() {
           Method.delete, '/users/:id', respondWith((final _) => Response(204)));
 
       final initialCtx =
-          _FakeRequest('/users/123', method: Method.patch).toContext(Object());
+          buildNewContext(_FakeRequest('/users/123', method: Method.patch));
       final resultingCtx =
           await middleware(respondWith((final _) => Response(404)))(initialCtx);
 
@@ -467,7 +466,7 @@ void main() {
 
       bool nextCalled = false;
       final initialCtx =
-          _FakeRequest('/posts', method: Method.get).toContext(Object());
+          buildNewContext(_FakeRequest('/posts', method: Method.get));
       final resultingCtx = await middleware((final ctx) async {
         nextCalled = true;
         return ctx.respond(Response(404));
