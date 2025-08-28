@@ -1,0 +1,12 @@
+# Gemini CLI Project Configuration
+
+# Instructions for all interactions with this project.
+
+## Version Control Workflow
+# Use Jujutsu (jj) for version control.
+# Always start a new change with `jj new`.
+# After making changes, describe them with `jj describe`.
+
+## Commit Message Style
+# Follow the conventional commit format.
+# The type of the commit (e.g., `fix`, `feat`, `test`) must be in lowercase.
