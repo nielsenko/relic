@@ -6,30 +6,33 @@ import 'package:relic/relic.dart';
 import 'package:test/test.dart';
 
 import 'headers/headers_test_utils.dart';
+import 'util/fake_adapter/fake_adapter_utils.dart';
 import 'util/test_util.dart';
 
 void main() {
-  // Use concrete type to ensure extensions are applied
-  late RelicServer server;
+  late TestHarness harness;
 
   setUp(() async {
-    server = await createServer();
+    harness = await createHarness();
   });
 
-  tearDown(() => server.close());
+  tearDown(() => harness.close());
 
   group('Given a server', () {
     test('when a valid HTTP request is made '
         'then it serves the request using the mounted handler', () async {
-      await server.mountAndStart(syncHandler);
-      // Use toUri to ensure we have a valid Uri object
-      final response = await http.read(server.url);
+      await harness.mount(syncHandler);
+      final response = await harness.client.read(harness.url);
       expect(response, equals('Hello from /'));
     });
 
     test('when a malformed HTTP request is made '
         'then it returns a 400 Bad Request response', () async {
-      await server.mountAndStart(syncHandler);
+      // This test requires real network IO - malformed URLs are rejected
+      // before reaching FakeAdapter
+      final server = await testServe(syncHandler);
+      addTearDown(server.close);
+
       final rs = await http.get(
         Uri.parse('${server.url}/%D0%C2%BD%A8%CE%C4%BC%FE%BC%D0.zip'),
       );
@@ -39,6 +42,7 @@ void main() {
 
     test('when no handler is mounted initially '
         'then it delays requests until a handler is mounted', () async {
+      // This test requires direct adapter control
       final adapter = await IOAdapter.bind(InternetAddress.loopbackIPv4);
       final port = adapter.port;
       final delayedResponse = http.read(Uri.http('localhost:$port'));

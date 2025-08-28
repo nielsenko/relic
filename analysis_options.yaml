@@ -8,4 +8,3 @@ linter:
   rules:
     avoid_relative_lib_imports: true
     prefer_relative_imports: true
-    public_member_api_docs: false # TODO: This is temporary until we get closer to release

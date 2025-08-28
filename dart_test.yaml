@@ -1,2 +1,10 @@
 tags:
   hot-reload: {}
+
+presets:
+  fake:
+    define:
+      adapter: fake
+  io:
+    define:
+      adapter: io
