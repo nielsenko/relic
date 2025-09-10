@@ -12,11 +12,9 @@ import 'io_adapter.dart';
 /// If [security] is provided, a secure server will be started.
 ///
 /// {@template relic_server_header_defaults}
-/// Every response will get a "date" header and an "X-Powered-By" header.
-/// If either header is present in the `Response`, it will not be
+/// Every response will get a "date" header.
+/// If this header is present in the `Response`, it will not be
 /// overwritten.
-/// Pass [poweredByHeader] to set the default content for "X-Powered-By",
-/// pass `null` to omit this header.
 /// {@endtemplate}
 Future<RelicServer> serve(
   final Handler handler,
@@ -26,7 +24,6 @@ Future<RelicServer> serve(
   final int? backlog,
   final bool shared = false,
   final bool strictHeaders = false,
-  final String? poweredByHeader = RelicServer.defaultPoweredByHeader,
 }) async {
   final adapter = IOAdapter(await bindHttpServer(
     address,
@@ -38,7 +35,6 @@ Future<RelicServer> serve(
   final server = RelicServer(
     adapter,
     strictHeaders: strictHeaders,
-    poweredByHeader: poweredByHeader,
   );
   await server.mountAndStart(handler);
   return server;
