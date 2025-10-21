@@ -16,7 +16,7 @@ Future<void> main() async {
       )); // handles any verb, and any path
 
   // Start a server that forward request to the handler
-  final adapter = await IOAdapter.bind(InternetAddress.anyIPv4, port: 8080);
-  final server = RelicServer(adapter);
+  final server =
+      RelicServer(() => IOAdapter.bind(InternetAddress.anyIPv4, port: 8080));
   await server.mountAndStart(handler);
 }
