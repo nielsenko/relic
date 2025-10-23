@@ -21,45 +21,38 @@ Future<void> main() async {
   log('Starting Body example server...');
 
   // Setup router with various body handling examples
-  final app = RelicApp()
-    ..use('/', logRequests())
-    ..get(
-        '/',
-        respondWith((final _) =>
-            Response.ok(body: Body.fromString('Body example server'))))
-
-    // Basic text response
-    ..get(
-        '/hello',
-        respondWith(
-            (final _) => Response.ok(body: Body.fromString('Hello, World!'))))
-
-    // JSON API endpoint
-    ..post('/api/data', jsonApiHandler)
-
-    // File upload endpoint
-    ..post('/upload', fileUploadHandler)
-
-    // Image serving endpoint
-    ..get('/image', serveImageHandler)
-
-    // Streaming data endpoint
-    ..get('/stream', streamDataHandler)
-
-    // Body type detection examples
-    ..get('/detect', bodyDetectionExamples)
-
-    // Content length examples
-    ..get('/length', contentLengthExamples)
-
-    // Stream processing example
-    ..post('/process-stream', streamProcessingHandler)
-
-    // Body copying example (middleware)
-    ..post(
-      '/logged-echo',
-      echoHandler,
-    );
+  final app =
+      RelicApp()
+        ..use('/', logRequests())
+        ..get(
+          '/',
+          respondWith(
+            (_) => Response.ok(body: Body.fromString('Body example server')),
+          ),
+        )
+        // Basic text response
+        ..get(
+          '/hello',
+          respondWith(
+            (_) => Response.ok(body: Body.fromString('Hello, World!')),
+          ),
+        )
+        // JSON API endpoint
+        ..post('/api/data', jsonApiHandler)
+        // File upload endpoint
+        ..post('/upload', fileUploadHandler)
+        // Image serving endpoint
+        ..get('/image', serveImageHandler)
+        // Streaming data endpoint
+        ..get('/stream', streamDataHandler)
+        // Body type detection examples
+        ..get('/detect', bodyDetectionExamples)
+        // Content length examples
+        ..get('/length', contentLengthExamples)
+        // Stream processing example
+        ..post('/process-stream', streamProcessingHandler)
+        // Body copying example (middleware)
+        ..post('/logged-echo', echoHandler);
 
   // Start the server
   await app.serve(port: 8080);
@@ -89,20 +82,19 @@ Future<ResponseContext> jsonApiHandler(NewContext ctx) async {
     final response = {
       'received': data,
       'timestamp': DateTime.now().toIso8601String(),
-      'status': 'success'
+      'status': 'success',
     };
 
     // Return JSON response with automatic content type detection
-    return ctx.respond(Response.ok(
-      body: Body.fromString(
-        jsonEncode(response),
-        mimeType: MimeType.json,
+    return ctx.respond(
+      Response.ok(
+        body: Body.fromString(jsonEncode(response), mimeType: MimeType.json),
       ),
-    ));
+    );
   } catch (e) {
-    return ctx.respond(Response.badRequest(
-      body: Body.fromString('Invalid JSON: $e'),
-    ));
+    return ctx.respond(
+      Response.badRequest(body: Body.fromString('Invalid JSON: $e')),
+    );
   }
 }
 
@@ -114,10 +106,13 @@ Future<ResponseContext> fileUploadHandler(NewContext ctx) async {
 
   // Validate file size
   if (contentLength != null && contentLength > maxFileSize) {
-    return ctx.respond(Response.badRequest(
-      body: Body.fromString(
-          'File too large. Maximum size: ${maxFileSize ~/ 1024 ~/ 1024}MB'),
-    ));
+    return ctx.respond(
+      Response.badRequest(
+        body: Body.fromString(
+          'File too large. Maximum size: ${maxFileSize ~/ 1024 ~/ 1024}MB',
+        ),
+      ),
+    );
   }
 
   // Create upload directory if it doesn't exist
@@ -145,20 +140,22 @@ Future<ResponseContext> fileUploadHandler(NewContext ctx) async {
 
     log('File uploaded: $filename ($bytesWritten bytes)');
 
-    return ctx.respond(Response.ok(
-      body: Body.fromString(
-        jsonEncode({
-          'message': 'Upload successful',
-          'filename': filename,
-          'size': bytesWritten,
-        }),
-        mimeType: MimeType.json,
+    return ctx.respond(
+      Response.ok(
+        body: Body.fromString(
+          jsonEncode({
+            'message': 'Upload successful',
+            'filename': filename,
+            'size': bytesWritten,
+          }),
+          mimeType: MimeType.json,
+        ),
       ),
-    ));
+    );
   } catch (e) {
-    return ctx.respond(Response.internalServerError(
-      body: Body.fromString('Upload failed: $e'),
-    ));
+    return ctx.respond(
+      Response.internalServerError(body: Body.fromString('Upload failed: $e')),
+    );
   }
 }
 
@@ -174,13 +171,11 @@ Future<ResponseContext> serveImageHandler(NewContext ctx) async {
     0x54, 0x08, 0xD7, 0x63, 0xF8, 0x0F, 0x00, 0x00,
     0x01, 0x00, 0x01, 0x5C, 0xC2, 0xD2, 0x3D, 0x00,
     0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, // IEND chunk
-    0x42, 0x60, 0x82
+    0x42, 0x60, 0x82,
   ]);
 
   // Body automatically detects image/png from magic bytes
-  return ctx.respond(Response.ok(
-    body: Body.fromData(pngBytes),
-  ));
+  return ctx.respond(Response.ok(body: Body.fromData(pngBytes)));
 }
 
 /// Streaming response handler for large datasets.
@@ -188,13 +183,15 @@ Future<ResponseContext> streamDataHandler(NewContext ctx) async {
   // Create a stream that generates data incrementally
   final dataStream = generateLargeDataset();
 
-  return ctx.respond(Response.ok(
-    body: Body.fromDataStream(
-      dataStream,
-      mimeType: MimeType.json,
-      // contentLength omitted for chunked encoding
+  return ctx.respond(
+    Response.ok(
+      body: Body.fromDataStream(
+        dataStream,
+        mimeType: MimeType.json,
+        // contentLength omitted for chunked encoding
+      ),
     ),
-  ));
+  );
 }
 
 /// Generates a stream of JSON data to demonstrate streaming responses.
@@ -227,8 +224,9 @@ Future<ResponseContext> bodyDetectionExamples(NewContext ctx) async {
   examples['JSON detection'] = jsonBody.bodyType?.mimeType.toString() ?? 'null';
 
   // HTML detection
-  final htmlBody =
-      Body.fromString('<!DOCTYPE html><html><body>Hello</body></html>');
+  final htmlBody = Body.fromString(
+    '<!DOCTYPE html><html><body>Hello</body></html>',
+  );
   examples['HTML detection'] = htmlBody.bodyType?.mimeType.toString() ?? 'null';
 
   // XML detection
@@ -241,20 +239,30 @@ Future<ResponseContext> bodyDetectionExamples(NewContext ctx) async {
       textBody.bodyType?.mimeType.toString() ?? 'null';
 
   // Binary detection (PNG)
-  final pngBytes =
-      Uint8List.fromList([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+  final pngBytes = Uint8List.fromList([
+    0x89,
+    0x50,
+    0x4E,
+    0x47,
+    0x0D,
+    0x0A,
+    0x1A,
+    0x0A,
+  ]);
   final pngBody = Body.fromData(pngBytes);
   examples['PNG detection'] = pngBody.bodyType?.mimeType.toString() ?? 'null';
 
-  return ctx.respond(Response.ok(
-    body: Body.fromString(
-      jsonEncode({
-        'title': 'MIME Type Detection Examples',
-        'examples': examples,
-      }),
-      mimeType: MimeType.json,
+  return ctx.respond(
+    Response.ok(
+      body: Body.fromString(
+        jsonEncode({
+          'title': 'MIME Type Detection Examples',
+          'examples': examples,
+        }),
+        mimeType: MimeType.json,
+      ),
     ),
-  ));
+  );
 }
 
 /// Handler demonstrating content length handling.
@@ -279,16 +287,18 @@ Future<ResponseContext> contentLengthExamples(NewContext ctx) async {
   examples['Unicode body length'] = unicodeBody.contentLength;
   examples['Unicode character count'] = 'Hello 🌍'.length;
 
-  return ctx.respond(Response.ok(
-    body: Body.fromString(
-      jsonEncode({
-        'title': 'Content Length Examples',
-        'examples': examples,
-        'note': 'Length is in bytes, not characters',
-      }),
-      mimeType: MimeType.json,
+  return ctx.respond(
+    Response.ok(
+      body: Body.fromString(
+        jsonEncode({
+          'title': 'Content Length Examples',
+          'examples': examples,
+          'note': 'Length is in bytes, not characters',
+        }),
+        mimeType: MimeType.json,
+      ),
     ),
-  ));
+  );
 }
 
 /// Handler demonstrating stream processing for large uploads.
@@ -307,20 +317,24 @@ Future<ResponseContext> streamProcessingHandler(NewContext ctx) async {
       log('Processed chunk $chunkCount: ${chunk.length} bytes');
     }
 
-    return ctx.respond(Response.ok(
-      body: Body.fromString(
-        jsonEncode({
-          'message': 'Stream processed successfully',
-          'totalBytes': totalBytes,
-          'chunkCount': chunkCount,
-        }),
-        mimeType: MimeType.json,
+    return ctx.respond(
+      Response.ok(
+        body: Body.fromString(
+          jsonEncode({
+            'message': 'Stream processed successfully',
+            'totalBytes': totalBytes,
+            'chunkCount': chunkCount,
+          }),
+          mimeType: MimeType.json,
+        ),
       ),
-    ));
+    );
   } catch (e) {
-    return ctx.respond(Response.internalServerError(
-      body: Body.fromString('Stream processing failed: $e'),
-    ));
+    return ctx.respond(
+      Response.internalServerError(
+        body: Body.fromString('Stream processing failed: $e'),
+      ),
+    );
   }
 }
 
@@ -333,9 +347,7 @@ Middleware loggingMiddleware() {
       log('Request body: $content');
 
       // Create new request with fresh body
-      final newRequest = ctx.request.copyWith(
-        body: Body.fromString(content),
-      );
+      final newRequest = ctx.request.copyWith(body: Body.fromString(content));
 
       // Continue with new request
       return next(ctx.withRequest(newRequest));
@@ -347,14 +359,16 @@ Middleware loggingMiddleware() {
 Future<ResponseContext> echoHandler(NewContext ctx) async {
   final content = await ctx.request.readAsString();
 
-  return ctx.respond(Response.ok(
-    body: Body.fromString(
-      jsonEncode({
-        'echo': content,
-        'contentType': ctx.request.mimeType?.toString(),
-        'encoding': ctx.request.encoding?.name,
-      }),
-      mimeType: MimeType.json,
+  return ctx.respond(
+    Response.ok(
+      body: Body.fromString(
+        jsonEncode({
+          'echo': content,
+          'contentType': ctx.request.mimeType?.toString(),
+          'encoding': ctx.request.encoding?.name,
+        }),
+        mimeType: MimeType.json,
+      ),
     ),
-  ));
+  );
 }

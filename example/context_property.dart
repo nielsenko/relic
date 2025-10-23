@@ -26,16 +26,17 @@ Future<ResponseContext> handler(NewContext ctx) async {
 
   log('Request ID: $requestId');
 
-  return ctx.respond(Response.ok(
-    body: Body.fromString('Your request ID is: $requestId'),
-  ));
+  return ctx.respond(
+    Response.ok(body: Body.fromString('Your request ID is: $requestId')),
+  );
 }
 
 void main() async {
   // Set up the router with routes
-  final app = RelicApp()
-    ..use('/', requestIdMiddleware) // Sets the request ID
-    ..get('/', handler); // Uses the request ID
+  final app =
+      RelicApp()
+        ..use('/', requestIdMiddleware) // Sets the request ID
+        ..get('/', handler); // Uses the request ID
 
   await app.serve();
   log('Server running on http://localhost:8080');

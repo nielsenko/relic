@@ -49,9 +49,11 @@ Middleware errorHandlingMiddleware() {
       try {
         return await innerHandler(ctx);
       } catch (error) {
-        return ctx.respond(Response.internalServerError(
-          body: Body.fromString('Something went wrong'),
-        ));
+        return ctx.respond(
+          Response.internalServerError(
+            body: Body.fromString('Something went wrong'),
+          ),
+        );
       }
     };
   };
@@ -59,30 +61,28 @@ Middleware errorHandlingMiddleware() {
 
 /// Simple handlers
 Future<ResponseContext> homeHandler(NewContext ctx) async {
-  return ctx.respond(Response.ok(
-    body: Body.fromString('Hello from home page!'),
-  ));
+  return ctx.respond(
+    Response.ok(body: Body.fromString('Hello from home page!')),
+  );
 }
 
 Future<ResponseContext> apiHandler(NewContext ctx) async {
   final data = {'message': 'Hello from API!'};
 
-  return ctx.respond(Response.ok(
-    body: Body.fromString(jsonEncode(data)),
-  ));
+  return ctx.respond(Response.ok(body: Body.fromString(jsonEncode(data))));
 }
 
 void main() async {
-  final app = RelicApp()
-    // Apply middleware to all routes
-    ..use('/', logRequests())
-    ..use('/', timingMiddleware())
-    ..use('/', addHeaderMiddleware())
-
-    // Routes
-    ..get('/', homeHandler)
-    ..use('/api', errorHandlingMiddleware())
-    ..get('/api', apiHandler);
+  final app =
+      RelicApp()
+        // Apply middleware to all routes
+        ..use('/', logRequests())
+        ..use('/', timingMiddleware())
+        ..use('/', addHeaderMiddleware())
+        // Routes
+        ..get('/', homeHandler)
+        ..use('/api', errorHandlingMiddleware())
+        ..get('/api', apiHandler);
 
   await app.serve();
   log('Middleware example running on http://localhost:8080');
