@@ -1,0 +1,1 @@
+This directory contains the build hooks for the Relic project.
