@@ -35,6 +35,8 @@ dev_dependencies:
   http: ^1.1.0
   lints: ">=5.0.0 <7.0.0"
   mockito: ^5.4.4
+  native_assets_builder: ^0.1.0
+  native_assets_cli: ^0.1.0
   routingkit: ^5.1.2
   serverpod_lints: ^3.0.1
   spanner: ^1.0.5
@@ -47,3 +49,11 @@ dev_dependencies:
   frontend_server_client: ^4.0.0
   pub_semver: ^2.1.4
   watcher: ^1.1.0
+
+# The native assets feature enables Dart projects to ship and use native code.
+# It is designed to work with dart:ffi. It supports compiling and bundling
+# native code from source, and bundling precompiled binaries.
+# The hook for this package is at 'hook/build.dart'.
+native_assets:
+  hooks:
+    - build.dart

@@ -1,0 +1,1 @@
+This directory contains the Rust source code for the hyper-based server used by Relic.
