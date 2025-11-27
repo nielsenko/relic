@@ -65,11 +65,13 @@ Future<void> main() async {
   await app.serve();
 }
 
-const _ageParam = PathParam<int>(#age, int.parse);
+// Define typed path parameter accessor for age.
+const ageParam = IntPathParam(#age);
+
 /// Handles requests to the hello endpoint with path parameters.
 Response helloHandler(final Request req) {
-  final name = req.pathParameters.raw[#name]; 
-  final age = req.pathParameters.get(_ageParam);
+  final name = req.pathParameters.raw[#name];
+  final age = req.pathParameters.get(ageParam);
 
   return Response.ok(
     body: Body.fromString('Hello, $name! To think you are $age years old.\n'),
