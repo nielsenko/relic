@@ -84,6 +84,24 @@ void main() {
       expect(r2.body, equals('Request #2'));
       expect(r3.body, equals('Request #3'));
     });
+
+    test('client.read returns body string', () async {
+      await server.mountAndStart((final req) {
+        return Response.ok(body: Body.fromString('Hello World'));
+      });
+
+      final body = await client.read(Uri.parse('http://localhost/'));
+      expect(body, equals('Hello World'));
+    });
+
+    test('client.readBytes returns body bytes', () async {
+      await server.mountAndStart((final req) {
+        return Response.ok(body: Body.fromString('Hello'));
+      });
+
+      final bytes = await client.readBytes(Uri.parse('http://localhost/'));
+      expect(bytes, equals([72, 101, 108, 108, 111])); // "Hello" in bytes
+    });
   });
 
   group('TestHarness', () {
