@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io' as io;
 
 import 'package:http/http.dart' as http;
@@ -33,9 +34,29 @@ final AdapterType adapterType = AdapterType.parse(
   const String.fromEnvironment('adapter', defaultValue: 'fake'),
 );
 
+/// Signature for a function that creates a [RelicServer].
+///
+/// Used by [createHarness] to allow custom server configuration.
+typedef ServerFactory =
+    RelicServer Function(FutureOr<Adapter> Function() adapterFactory);
+
+/// Default server factory that creates a single-isolate server.
+RelicServer _defaultServerFactory(
+  final FutureOr<Adapter> Function() adapterFactory,
+) => RelicServer(adapterFactory);
+
 /// Creates a new test harness using the adapter type from environment.
 ///
-/// Configure via `--define=adapter=fake` or `--define=adapter=io`.
+/// Configure adapter via `--define=adapter=fake` or `--define=adapter=io`.
+///
+/// The optional [serverFactory] allows customizing server creation, e.g. for
+/// multi-isolate testing:
+///
+/// ```dart
+/// final harness = await createHarness(
+///   serverFactory: (adapterFactory) => RelicServer(adapterFactory, noOfIsolates: 4),
+/// );
+/// ```
 ///
 /// Example:
 /// ```dart
@@ -61,7 +82,9 @@ final AdapterType adapterType = AdapterType.parse(
 /// dart test                        # Uses fake (default, no network)
 /// dart test --define=adapter=io    # Uses real network
 /// ```
-Future<TestHarness> createHarness() => TestHarness.create(adapterType);
+Future<TestHarness> createHarness({
+  final ServerFactory serverFactory = _defaultServerFactory,
+}) => TestHarness.create(adapterType, serverFactory: serverFactory);
 
 /// A test harness that abstracts adapter selection for conformance testing.
 ///
@@ -109,11 +132,16 @@ class TestHarness {
        _client = client;
 
   /// Creates a test harness for the given [adapterType].
-  static Future<TestHarness> create(final AdapterType adapterType) async {
+  ///
+  /// The [serverFactory] allows customizing how the server is created.
+  static Future<TestHarness> create(
+    final AdapterType adapterType, {
+    final ServerFactory serverFactory = _defaultServerFactory,
+  }) async {
     switch (adapterType) {
       case AdapterType.fake:
         final adapter = FakeAdapter();
-        final server = RelicServer(() => adapter);
+        final server = serverFactory(() => adapter);
         final client = FakeHttpClient(adapter);
         return TestHarness._(
           adapterType: adapterType,
@@ -122,7 +150,7 @@ class TestHarness {
         );
 
       case AdapterType.io:
-        final server = RelicServer(
+        final server = serverFactory(
           () => IOAdapter.bind(io.InternetAddress.loopbackIPv4, port: 0),
         );
         final client = http.Client();
