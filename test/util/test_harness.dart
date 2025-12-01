@@ -1,12 +1,11 @@
-import 'dart:async';
 import 'dart:io' as io;
 
 import 'package:http/http.dart' as http;
+import 'package:relic/io_adapter.dart';
+import 'package:relic/relic.dart';
 
-import '../../../relic.dart';
-import '../io/io_adapter.dart';
-import 'fake_adapter.dart';
-import 'fake_http_client.dart';
+import 'fake_adapter/fake_adapter.dart';
+import 'fake_adapter/fake_http_client.dart';
 
 /// Configuration for which adapter type to use in tests.
 enum AdapterType {
@@ -54,16 +53,13 @@ class TestHarness {
   final AdapterType adapterType;
   final RelicServer _server;
   final http.Client _client;
-  final FakeAdapter? _fakeAdapter;
 
   TestHarness._({
     required this.adapterType,
     required final RelicServer server,
     required final http.Client client,
-    final FakeAdapter? fakeAdapter,
   }) : _server = server,
-       _client = client,
-       _fakeAdapter = fakeAdapter;
+       _client = client;
 
   /// Creates a test harness for the given [adapterType].
   static Future<TestHarness> create(final AdapterType adapterType) async {
@@ -76,7 +72,6 @@ class TestHarness {
           adapterType: adapterType,
           server: server,
           client: client,
-          fakeAdapter: adapter,
         );
 
       case AdapterType.io:
@@ -137,15 +132,5 @@ class TestHarness {
   Future<void> close() async {
     _client.close();
     await _server.close();
-  }
-
-  /// Access to the [FakeAdapter] if using [AdapterType.fake].
-  ///
-  /// Throws [StateError] if using [AdapterType.io].
-  FakeAdapter get fakeAdapter {
-    if (_fakeAdapter == null) {
-      throw StateError('FakeAdapter is only available with AdapterType.fake');
-    }
-    return _fakeAdapter;
   }
 }
