@@ -13,8 +13,55 @@ enum AdapterType {
   fake,
 
   /// Use [IOAdapter] with real network requests.
-  io,
+  io;
+
+  static final _reverseMap = <String, AdapterType>{
+    for (final a in values) a.name: a,
+  };
+
+  factory AdapterType.parse(final String type) {
+    final trimmed = type.trim().toLowerCase();
+    return _reverseMap[trimmed.toLowerCase()] ?? fake;
+  }
 }
+
+/// The adapter type to use for tests, configured via environment variable.
+///
+/// Set via `--define=adapter=fake` or `--define=adapter=io` when running tests.
+/// Defaults to [AdapterType.fake] if not specified or invalid.
+final AdapterType adapterType = AdapterType.parse(
+  const String.fromEnvironment('adapter', defaultValue: 'fake'),
+);
+
+/// Creates a new test harness using the adapter type from environment.
+///
+/// Configure via `--define=adapter=fake` or `--define=adapter=io`.
+///
+/// Example:
+/// ```dart
+/// void main() {
+///   late TestHarness harness;
+///
+///   setUp(() async {
+///     harness = await createHarness();
+///   });
+///
+///   tearDown(() => harness.close());
+///
+///   test('responds with 200', () async {
+///     await harness.mount(myHandler);
+///     final response = await harness.client.get(harness.url);
+///     expect(response.statusCode, 200);
+///   });
+/// }
+/// ```
+///
+/// Run tests with different adapters:
+/// ```sh
+/// dart test                        # Uses fake (default, no network)
+/// dart test --define=adapter=io    # Uses real network
+/// ```
+Future<TestHarness> createHarness() => TestHarness.create(adapterType);
 
 /// A test harness that abstracts adapter selection for conformance testing.
 ///
