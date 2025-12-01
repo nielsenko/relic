@@ -1,5 +1,6 @@
-import 'dart:convert';
 import 'dart:typed_data';
+
+import 'package:http/http.dart' as http;
 
 import '../../../relic.dart';
 import '../../context/result.dart' show RequestInternal;
@@ -8,8 +9,9 @@ import 'fake_adapter.dart';
 
 /// An HTTP client that communicates directly with a [FakeAdapter] in memory.
 ///
-/// This client bypasses all network traffic, enabling fast, deterministic
-/// tests. It implements a simple HTTP client interface similar to `package:http`.
+/// This client extends [http.BaseClient], making it a drop-in replacement for
+/// the standard `package:http` client. It bypasses all network traffic,
+/// enabling fast, deterministic tests.
 ///
 /// Example:
 /// ```dart
@@ -21,145 +23,48 @@ import 'fake_adapter.dart';
 /// final response = await client.get(Uri.parse('http://localhost/test'));
 /// print(response.body); // Response from myHandler
 /// ```
-class FakeHttpClient {
+class FakeHttpClient extends http.BaseClient {
   final FakeAdapter _adapter;
 
   /// Creates a [FakeHttpClient] that sends requests to the given [adapter].
   FakeHttpClient(this._adapter);
 
-  /// Sends an HTTP GET request to the given [url].
-  Future<FakeClientResponse> get(
-    final Uri url, {
-    final Map<String, String>? headers,
-  }) => send(FakeClientRequest(Method.get, url, headers: headers));
-
-  /// Sends an HTTP POST request to the given [url].
-  Future<FakeClientResponse> post(
-    final Uri url, {
-    final Map<String, String>? headers,
-    final Object? body,
-    final Encoding encoding = utf8,
-  }) => send(
-    FakeClientRequest(
-      Method.post,
-      url,
-      headers: headers,
-      body: body,
-      encoding: encoding,
-    ),
-  );
-
-  /// Sends an HTTP PUT request to the given [url].
-  Future<FakeClientResponse> put(
-    final Uri url, {
-    final Map<String, String>? headers,
-    final Object? body,
-    final Encoding encoding = utf8,
-  }) => send(
-    FakeClientRequest(
-      Method.put,
-      url,
-      headers: headers,
-      body: body,
-      encoding: encoding,
-    ),
-  );
-
-  /// Sends an HTTP PATCH request to the given [url].
-  Future<FakeClientResponse> patch(
-    final Uri url, {
-    final Map<String, String>? headers,
-    final Object? body,
-    final Encoding encoding = utf8,
-  }) => send(
-    FakeClientRequest(
-      Method.patch,
-      url,
-      headers: headers,
-      body: body,
-      encoding: encoding,
-    ),
-  );
-
-  /// Sends an HTTP DELETE request to the given [url].
-  Future<FakeClientResponse> delete(
-    final Uri url, {
-    final Map<String, String>? headers,
-    final Object? body,
-    final Encoding encoding = utf8,
-  }) => send(
-    FakeClientRequest(
-      Method.delete,
-      url,
-      headers: headers,
-      body: body,
-      encoding: encoding,
-    ),
-  );
-
-  /// Sends an HTTP HEAD request to the given [url].
-  Future<FakeClientResponse> head(
-    final Uri url, {
-    final Map<String, String>? headers,
-  }) => send(FakeClientRequest(Method.head, url, headers: headers));
-
-  /// Sends the given [request] and returns a [FakeClientResponse].
-  Future<FakeClientResponse> send(final FakeClientRequest request) async {
-    final relicRequest = _buildRequest(request);
+  @override
+  Future<http.StreamedResponse> send(final http.BaseRequest request) async {
+    final relicRequest = _buildRelicRequest(request);
     final adapterRequest = FakeAdapterRequest(relicRequest);
 
     final fakeResponse = await _adapter.handleRequest(adapterRequest);
 
-    return FakeClientResponse(
-      statusCode: fakeResponse.statusCode,
+    return http.StreamedResponse(
+      Stream.value(Uint8List.fromList(fakeResponse.bodyBytes)),
+      fakeResponse.statusCode,
       headers: _headersToMap(fakeResponse.headers),
-      bodyBytes: Uint8List.fromList(fakeResponse.bodyBytes),
+      request: request,
     );
   }
 
-  /// Sends a request and returns the response body as a string.
-  Future<String> read(
-    final Uri url, {
-    final Map<String, String>? headers,
-  }) async {
-    final response = await get(url, headers: headers);
-    return response.body;
-  }
-
-  /// Sends a request and returns the response body as bytes.
-  Future<Uint8List> readBytes(
-    final Uri url, {
-    final Map<String, String>? headers,
-  }) async {
-    final response = await get(url, headers: headers);
-    return response.bodyBytes;
-  }
-
-  Request _buildRequest(final FakeClientRequest request) {
+  Request _buildRelicRequest(final http.BaseRequest request) {
     final headers = Headers.build((final mh) {
-      request.headers?.forEach((final key, final value) {
+      request.headers.forEach((final key, final value) {
         mh[key] = [value];
       });
     });
 
     Body body;
-    if (request.body == null) {
+    if (request is http.Request) {
+      final bodyBytes = request.bodyBytes;
+      if (bodyBytes.isEmpty) {
+        body = Body.empty();
+      } else {
+        body = Body.fromData(bodyBytes);
+      }
+    } else if (request is http.MultipartRequest) {
+      // For multipart, we'd need more complex handling
+      // For now, treat as empty body
       body = Body.empty();
-    } else if (request.body is String) {
-      body = Body.fromString(request.body as String);
-    } else if (request.body is List<int>) {
-      body = Body.fromData(Uint8List.fromList(request.body as List<int>));
-    } else if (request.body is Map) {
-      // Encode as form data
-      final encoded =
-          Uri(
-            queryParameters: (request.body as Map).map(
-              (final k, final v) => MapEntry(k.toString(), v.toString()),
-            ),
-          ).query;
-      body = Body.fromString(encoded);
     } else {
-      body = Body.fromString(request.body.toString());
+      body = Body.empty();
     }
 
     // Ensure URL is absolute
@@ -172,7 +77,7 @@ class FakeHttpClient {
     }
 
     return RequestInternal.create(
-      request.method,
+      Method.parse(request.method),
       url,
       Object(), // token
       headers: headers,
@@ -194,40 +99,4 @@ class FakeHttpClient {
     }
     return map;
   }
-}
-
-/// A request to be sent by [FakeHttpClient].
-class FakeClientRequest {
-  final Method method;
-  final Uri url;
-  final Map<String, String>? headers;
-  final Object? body;
-  final Encoding encoding;
-
-  FakeClientRequest(
-    this.method,
-    this.url, {
-    this.headers,
-    this.body,
-    this.encoding = utf8,
-  });
-}
-
-/// A response from [FakeHttpClient].
-class FakeClientResponse {
-  final int statusCode;
-  final Map<String, String> headers;
-  final Uint8List bodyBytes;
-
-  FakeClientResponse({
-    required this.statusCode,
-    required this.headers,
-    required this.bodyBytes,
-  });
-
-  /// The response body as a string.
-  String get body => utf8.decode(bodyBytes);
-
-  /// Whether the request was successful (status code 2xx).
-  bool get isSuccess => statusCode >= 200 && statusCode < 300;
 }

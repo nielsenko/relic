@@ -1,7 +1,5 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io' as io;
-import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
@@ -9,263 +7,6 @@ import '../../../relic.dart';
 import '../io/io_adapter.dart';
 import 'fake_adapter.dart';
 import 'fake_http_client.dart';
-
-/// A unified HTTP client interface for testing.
-///
-/// This interface abstracts the differences between [FakeHttpClient] and
-/// `package:http` [http.Client], allowing tests to be written once and run
-/// with either adapter type.
-abstract class TestClient {
-  Future<TestResponse> get(final Uri url, {final Map<String, String>? headers});
-  Future<TestResponse> post(
-    final Uri url, {
-    final Map<String, String>? headers,
-    final Object? body,
-  });
-  Future<TestResponse> put(
-    final Uri url, {
-    final Map<String, String>? headers,
-    final Object? body,
-  });
-  Future<TestResponse> patch(
-    final Uri url, {
-    final Map<String, String>? headers,
-    final Object? body,
-  });
-  Future<TestResponse> delete(
-    final Uri url, {
-    final Map<String, String>? headers,
-    final Object? body,
-  });
-  Future<TestResponse> head(
-    final Uri url, {
-    final Map<String, String>? headers,
-  });
-
-  Future<String> read(final Uri url, {final Map<String, String>? headers});
-  Future<Uint8List> readBytes(
-    final Uri url, {
-    final Map<String, String>? headers,
-  });
-
-  void close();
-}
-
-/// A unified response type for testing.
-class TestResponse {
-  final int statusCode;
-  final Map<String, String> headers;
-  final Uint8List bodyBytes;
-
-  TestResponse({
-    required this.statusCode,
-    required this.headers,
-    required this.bodyBytes,
-  });
-
-  String get body => utf8.decode(bodyBytes);
-  bool get isSuccess => statusCode >= 200 && statusCode < 300;
-}
-
-/// A [TestClient] implementation backed by [FakeHttpClient].
-class FakeTestClient implements TestClient {
-  final FakeHttpClient _client;
-
-  FakeTestClient(final FakeAdapter adapter) : _client = FakeHttpClient(adapter);
-
-  @override
-  Future<TestResponse> get(
-    final Uri url, {
-    final Map<String, String>? headers,
-  }) async {
-    final response = await _client.get(url, headers: headers);
-    return _convert(response);
-  }
-
-  @override
-  Future<TestResponse> post(
-    final Uri url, {
-    final Map<String, String>? headers,
-    final Object? body,
-  }) async {
-    final response = await _client.post(url, headers: headers, body: body);
-    return _convert(response);
-  }
-
-  @override
-  Future<TestResponse> put(
-    final Uri url, {
-    final Map<String, String>? headers,
-    final Object? body,
-  }) async {
-    final response = await _client.put(url, headers: headers, body: body);
-    return _convert(response);
-  }
-
-  @override
-  Future<TestResponse> patch(
-    final Uri url, {
-    final Map<String, String>? headers,
-    final Object? body,
-  }) async {
-    final response = await _client.patch(url, headers: headers, body: body);
-    return _convert(response);
-  }
-
-  @override
-  Future<TestResponse> delete(
-    final Uri url, {
-    final Map<String, String>? headers,
-    final Object? body,
-  }) async {
-    final response = await _client.delete(url, headers: headers, body: body);
-    return _convert(response);
-  }
-
-  @override
-  Future<TestResponse> head(
-    final Uri url, {
-    final Map<String, String>? headers,
-  }) async {
-    final response = await _client.head(url, headers: headers);
-    return _convert(response);
-  }
-
-  @override
-  Future<String> read(final Uri url, {final Map<String, String>? headers}) =>
-      _client.read(url, headers: headers);
-
-  @override
-  Future<Uint8List> readBytes(
-    final Uri url, {
-    final Map<String, String>? headers,
-  }) => _client.readBytes(url, headers: headers);
-
-  @override
-  void close() {
-    // FakeHttpClient doesn't need explicit closing
-  }
-
-  TestResponse _convert(final FakeClientResponse response) {
-    return TestResponse(
-      statusCode: response.statusCode,
-      headers: response.headers,
-      bodyBytes: response.bodyBytes,
-    );
-  }
-}
-
-/// A [TestClient] implementation backed by `package:http`.
-class IOTestClient implements TestClient {
-  final http.Client _client = http.Client();
-
-  @override
-  Future<TestResponse> get(
-    final Uri url, {
-    final Map<String, String>? headers,
-  }) async {
-    final response = await _client.get(url, headers: headers);
-    return _convert(response);
-  }
-
-  @override
-  Future<TestResponse> post(
-    final Uri url, {
-    final Map<String, String>? headers,
-    final Object? body,
-  }) async {
-    final response = await _client.post(
-      url,
-      headers: headers,
-      body:
-          body is String || body is List<int> || body is Map
-              ? body
-              : body?.toString(),
-    );
-    return _convert(response);
-  }
-
-  @override
-  Future<TestResponse> put(
-    final Uri url, {
-    final Map<String, String>? headers,
-    final Object? body,
-  }) async {
-    final response = await _client.put(
-      url,
-      headers: headers,
-      body:
-          body is String || body is List<int> || body is Map
-              ? body
-              : body?.toString(),
-    );
-    return _convert(response);
-  }
-
-  @override
-  Future<TestResponse> patch(
-    final Uri url, {
-    final Map<String, String>? headers,
-    final Object? body,
-  }) async {
-    final response = await _client.patch(
-      url,
-      headers: headers,
-      body:
-          body is String || body is List<int> || body is Map
-              ? body
-              : body?.toString(),
-    );
-    return _convert(response);
-  }
-
-  @override
-  Future<TestResponse> delete(
-    final Uri url, {
-    final Map<String, String>? headers,
-    final Object? body,
-  }) async {
-    final response = await _client.delete(
-      url,
-      headers: headers,
-      body:
-          body is String || body is List<int> || body is Map
-              ? body
-              : body?.toString(),
-    );
-    return _convert(response);
-  }
-
-  @override
-  Future<TestResponse> head(
-    final Uri url, {
-    final Map<String, String>? headers,
-  }) async {
-    final response = await _client.head(url, headers: headers);
-    return _convert(response);
-  }
-
-  @override
-  Future<String> read(final Uri url, {final Map<String, String>? headers}) =>
-      _client.read(url, headers: headers);
-
-  @override
-  Future<Uint8List> readBytes(
-    final Uri url, {
-    final Map<String, String>? headers,
-  }) => _client.readBytes(url, headers: headers);
-
-  @override
-  void close() => _client.close();
-
-  TestResponse _convert(final http.Response response) {
-    return TestResponse(
-      statusCode: response.statusCode,
-      headers: response.headers,
-      bodyBytes: response.bodyBytes,
-    );
-  }
-}
 
 /// Configuration for which adapter type to use in tests.
 enum AdapterType {
@@ -279,7 +20,9 @@ enum AdapterType {
 /// A test harness that abstracts adapter selection for conformance testing.
 ///
 /// This harness allows you to write tests once and run them against different
-/// adapter implementations to verify conformance.
+/// adapter implementations to verify conformance. Since [FakeHttpClient]
+/// extends [http.BaseClient], both adapter types use the same `http.Client`
+/// interface.
 ///
 /// Example:
 /// ```dart
@@ -310,13 +53,13 @@ enum AdapterType {
 class TestHarness {
   final AdapterType adapterType;
   final RelicServer _server;
-  final TestClient _client;
+  final http.Client _client;
   final FakeAdapter? _fakeAdapter;
 
   TestHarness._({
     required this.adapterType,
     required final RelicServer server,
-    required final TestClient client,
+    required final http.Client client,
     final FakeAdapter? fakeAdapter,
   }) : _server = server,
        _client = client,
@@ -328,7 +71,7 @@ class TestHarness {
       case AdapterType.fake:
         final adapter = FakeAdapter();
         final server = RelicServer(() => adapter);
-        final client = FakeTestClient(adapter);
+        final client = FakeHttpClient(adapter);
         return TestHarness._(
           adapterType: adapterType,
           server: server,
@@ -340,7 +83,7 @@ class TestHarness {
         final server = RelicServer(
           () => IOAdapter.bind(io.InternetAddress.loopbackIPv4, port: 0),
         );
-        final client = IOTestClient();
+        final client = http.Client();
         return TestHarness._(
           adapterType: adapterType,
           server: server,
@@ -350,7 +93,11 @@ class TestHarness {
   }
 
   /// The HTTP client for making requests.
-  TestClient get client => _client;
+  ///
+  /// This is an [http.Client] which works with both adapter types.
+  /// For [AdapterType.fake], this is a [FakeHttpClient].
+  /// For [AdapterType.io], this is a standard [http.Client].
+  http.Client get client => _client;
 
   /// The underlying server.
   RelicServer get server => _server;
