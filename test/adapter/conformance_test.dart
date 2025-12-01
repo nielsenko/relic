@@ -4,9 +4,10 @@
 /// conformance across different adapter implementations.
 library;
 
-import 'package:relic/fake_adapter.dart';
 import 'package:relic/relic.dart';
 import 'package:test/test.dart';
+
+import '../util/fake_adapter/fake_adapter_utils.dart';
 
 void main() {
   // Run the same tests against both adapter types

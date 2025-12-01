@@ -1,6 +1,7 @@
-import 'package:relic/fake_adapter.dart';
 import 'package:relic/relic.dart';
 import 'package:test/test.dart';
+
+import '../util/fake_adapter/fake_adapter_utils.dart';
 
 void main() {
   group('FakeAdapter', () {

@@ -1,10 +1,10 @@
 import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
+import 'package:relic/relic.dart';
+import 'package:relic/src/adapter/connection_info.dart';
+import 'package:relic/src/context/result.dart' show RequestInternal;
 
-import '../../../relic.dart';
-import '../../context/result.dart' show RequestInternal;
-import '../connection_info.dart';
 import 'fake_adapter.dart';
 
 /// An HTTP client that communicates directly with a [FakeAdapter] in memory.

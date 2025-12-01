@@ -1,10 +1,9 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:relic/relic.dart';
 import 'package:stream_channel/stream_channel.dart';
 import 'package:web_socket/web_socket.dart';
-
-import '../../../relic.dart';
 
 /// An in-memory [Adapter] implementation for testing without network traffic.
 ///
