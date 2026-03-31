@@ -1,0 +1,21 @@
+name: relic_errors
+description: Error handling and HTTP exception types for Relic web server.
+version: 0.1.0
+repository: https://github.com/serverpod/relic
+publish_to: none
+
+environment:
+  sdk: ^3.8.0
+
+resolution: workspace
+
+dependencies:
+  relic_core:
+    path: ../relic_core
+  codable_dart: ^0.1.0-beta.1
+
+dev_dependencies:
+  test: ^1.25.10
+  lints: ^6.0.0
+  test_utils:
+    path: ../test_utils
