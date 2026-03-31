@@ -11,6 +11,7 @@ workspace:
   - packages/relic_io
   - packages/relic_native
   - packages/relic_dst
+  - packages/relic_annotations
   # Internal support packages (not published)
   - packages/benchmark
   - packages/examples
