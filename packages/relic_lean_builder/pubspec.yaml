@@ -1,0 +1,22 @@
+name: relic_lean_builder
+description: Lean builder integration for the Relic web framework code generator.
+version: 0.0.1
+publish_to: none
+
+resolution: workspace
+
+environment:
+  sdk: ^3.8.0
+
+dependencies:
+  analyzer: ^12.0.0
+  relic_annotations:
+    path: ../relic_annotations
+  relic_generator:
+    path: ../relic_generator
+  # TODO(relic): Re-add lean_builder once it supports analyzer ^12.0.0.
+  # lean_builder requires analyzer <11.0.0, but relic_generator requires ^12.0.0.
+  # lean_builder: ^0.1.7
+
+dev_dependencies:
+  test: ^1.24.0

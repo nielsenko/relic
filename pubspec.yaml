@@ -14,6 +14,8 @@ workspace:
   - packages/relic_annotations
   - packages/relic_errors
   - packages/relic_generator
+  - packages/relic_analyzer_plugin
+  - packages/relic_lean_builder
   # Internal support packages (not published)
   - packages/benchmark
   - packages/examples
