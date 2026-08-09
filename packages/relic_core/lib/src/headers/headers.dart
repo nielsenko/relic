@@ -3,6 +3,7 @@ import 'dart:collection';
 import 'package:http_parser/http_parser.dart';
 
 import '../../relic_core.dart';
+import 'typed/primitives/token.dart';
 
 part 'mutable_headers.dart';
 
