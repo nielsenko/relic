@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import '../../../../relic_core.dart';
+import 'util/auth_params.dart';
 
 /// An abstract base class representing an HTTP Authorization header.
 ///
@@ -43,6 +44,16 @@ abstract class AuthorizationHeader {
 
     throw const FormatException('Invalid header format');
   }
+}
+
+/// Strips a case-insensitive auth-scheme [prefix] from [value] if present,
+/// returning the trimmed remainder, or [value] itself when absent.
+String _stripOptionalScheme(final String value, final String prefix) {
+  if (value.length < prefix.length ||
+      value.substring(0, prefix.length).toLowerCase() != prefix.toLowerCase()) {
+    return value;
+  }
+  return value.substring(prefix.length).trim();
 }
 
 /// Represents a Bearer token for HTTP Authorization.
@@ -293,17 +304,26 @@ final class DigestAuthorizationHeader extends AuthorizationHeader {
 
   /// Parses a Digest authorization header value and returns a [DigestAuthorizationHeader] instance.
   ///
-  /// This method extracts the various components of the Digest header from the provided string.
+  /// The leading `Digest` auth-scheme is optional: [AuthorizationHeader.parse]
+  /// dispatches on the scheme without removing it, while callers that have
+  /// already split it off pass the bare auth-param list.
+  ///
   /// Throws a [FormatException] if the header value is invalid or unrecognized.
   factory DigestAuthorizationHeader.parse(final String value) {
     if (value.isEmpty) {
       throw const FormatException('Digest token cannot be empty.');
     }
 
-    final Map<String, String> params = {};
-    final regex = RegExp(r'(\w+)="([^"]*)"');
-    for (final match in regex.allMatches(value)) {
-      params[match.group(1)!] = match.group(2)!;
+    final Map<String, String> params;
+    try {
+      params = {
+        for (final (name, paramValue) in parseAuthParams(
+          _stripOptionalScheme(value, 'Digest '),
+        ))
+          name: paramValue,
+      };
+    } on FormatException catch (e) {
+      throw FormatException('Invalid digest token format: ${e.message}');
     }
 
     if (params.isEmpty) {
