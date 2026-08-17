@@ -65,4 +65,74 @@ void main() {
       });
     });
   });
+
+  group('DigestAuthorizationHeader.headerValue', () {
+    group('Given a header with only required fields,', () {
+      test(
+        'when encoded, '
+        'then a single space follows the scheme and the value round-trips.',
+        () {
+          final header = DigestAuthorizationHeader(
+            username: 'foo',
+            realm: 'bar',
+            nonce: 'random',
+            uri: 'https://example.com',
+            response: 'modnar',
+          );
+
+          expect(
+            header.headerValue,
+            equals(
+              'Digest username="foo", realm="bar", nonce="random", '
+              'uri="https://example.com", response="modnar"',
+            ),
+          );
+          expect(
+            DigestAuthorizationHeader.parse(header.headerValue),
+            equals(header),
+          );
+        },
+      );
+    });
+
+    group('Given a field value containing a quote and a backslash,', () {
+      test(
+        'when encoded, '
+        'then they are escaped as quoted-pairs and the value round-trips.',
+        () {
+          final header = DigestAuthorizationHeader(
+            username: r'f"o\o',
+            realm: 'bar',
+            nonce: 'random',
+            uri: '/',
+            response: 'modnar',
+          );
+
+          expect(header.headerValue, contains(r'username="f\"o\\o"'));
+          expect(
+            DigestAuthorizationHeader.parse(header.headerValue),
+            equals(header),
+          );
+        },
+      );
+    });
+
+    group('Given a field value containing a control character,', () {
+      test(
+        'when encoded, '
+        'then it throws a FormatException instead of splitting the header.',
+        () {
+          final header = DigestAuthorizationHeader(
+            username: 'foo\r\nx-injected: 1',
+            realm: 'bar',
+            nonce: 'random',
+            uri: '/',
+            response: 'modnar',
+          );
+
+          expect(() => header.headerValue, throwsFormatException);
+        },
+      );
+    });
+  });
 }

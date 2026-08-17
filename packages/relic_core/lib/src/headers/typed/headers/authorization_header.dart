@@ -371,19 +371,19 @@ final class DigestAuthorizationHeader extends AuthorizationHeader {
   /// Returns the full authorization string for Digest authentication.
   @override
   String get headerValue {
-    return [
-      'Digest',
-      '$_username="$username"',
-      '$_realm="$realm"',
-      '$_nonce="$nonce"',
-      '$_uri="$uri"',
-      '$_response="$response"',
-      if (algorithm != null) '$_algorithm="$algorithm"',
-      if (qop != null) '$_qop="$qop"',
-      if (nc != null) '$_nc="$nc"',
-      if (cnonce != null) '$_cnonce="$cnonce"',
-      if (opaque != null) '$_opaque="$opaque"',
-    ].join(', ');
+    final params = [
+      '$_username=${_quoteString(username)}',
+      '$_realm=${_quoteString(realm)}',
+      '$_nonce=${_quoteString(nonce)}',
+      '$_uri=${_quoteString(uri)}',
+      '$_response=${_quoteString(response)}',
+      if (algorithm != null) '$_algorithm=$algorithm',
+      if (qop != null) '$_qop=$qop',
+      if (nc != null) '$_nc=$nc',
+      if (cnonce != null) '$_cnonce=${_quoteString(cnonce!)}',
+      if (opaque != null) '$_opaque=${_quoteString(opaque!)}',
+    ];
+    return 'Digest ${params.join(', ')}';
   }
 
   @override
@@ -451,4 +451,22 @@ final class DigestAuthorizationHeader extends AuthorizationHeader {
         '$_opaque: $opaque'
         ')';
   }
+}
+
+/// Wraps [s] in DQUOTEs, escaping interior `"` and `\` as `quoted-pair`
+/// (RFC 9110 5.6.4). Without this a value containing a quote would terminate
+/// the quoted-string early and corrupt the parsed credentials.
+///
+/// A control character (CR/LF in particular) is rejected rather than emitted
+/// verbatim, so a caller-controlled Digest field cannot split the header.
+String _quoteString(final String s) {
+  for (var i = 0; i < s.length; i++) {
+    final c = s.codeUnitAt(i);
+    if (c <= 0x1F || c == 0x7F) {
+      throw const FormatException(
+        'Digest quoted-string value must not contain control characters',
+      );
+    }
+  }
+  return '"${s.replaceAll(r'\', r'\\').replaceAll('"', r'\"')}"';
 }
