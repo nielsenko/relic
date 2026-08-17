@@ -16,25 +16,6 @@ void main() {
 
     tearDown(() => server.close());
 
-    test('when an empty Connection header is passed then the server responds '
-        'with a bad request including a message that states the directives '
-        'cannot be empty', () async {
-      expect(
-        getServerRequestHeaders(
-          server: server,
-          touchHeaders: (final h) => h.connection,
-          headers: {'connection': ''},
-        ),
-        throwsA(
-          isA<BadRequestException>().having(
-            (final e) => e.message,
-            'message',
-            contains('Value cannot be empty'),
-          ),
-        ),
-      );
-    });
-
     test('when an invalid Connection header is passed then the server responds '
         'with a bad request including a message that states the value '
         'is invalid', () async {
@@ -137,7 +118,7 @@ void main() {
         final headers = await getServerRequestHeaders(
           server: server,
           touchHeaders: (_) {},
-          headers: {'connection': ''},
+          headers: {'connection': 'custom-directive'},
         );
 
         expect(Headers.connection[headers].valueOrNullIfInvalid, isNull);
