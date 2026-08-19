@@ -165,9 +165,9 @@ final class Router<T extends Object> {
 
   /// Looks up a route matching an already normalized [normalizedPath].
   ///
-  /// Use this when the caller has built the path from parts and must not have
-  /// them re-split, such as when a routing key is assembled from a host and a
-  /// request path.
+  /// Use when the caller already holds a normalized path (e.g. a routing key
+  /// assembled from host and path). Walks the trie directly; results are not
+  /// cached.
   LookupResult<T> lookupPath(
     final Method method,
     final NormalizedPath normalizedPath, {
@@ -181,6 +181,17 @@ final class Router<T extends Object> {
 
     return RouterMatch(route, entry.parameters, entry.matched, entry.remaining);
   }
+
+  /// Looks up a route for the [Uri] of a request.
+  ///
+  /// The entry point for request routing: derives the path via
+  /// [NormalizedPath.fromUri] (splitting before decoding, so an encoded
+  /// separator cannot alter routing), then looks it up with [lookupPath].
+  LookupResult<T> lookupUri(
+    final Method method,
+    final Uri url, {
+    final bool backtrack = true,
+  }) => lookupPath(method, NormalizedPath.fromUri(url), backtrack: backtrack);
 
   /// Returns true if the router has no routes.
   bool get isEmpty => _allRoutes.isEmpty;

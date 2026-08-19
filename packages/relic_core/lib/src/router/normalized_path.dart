@@ -1,8 +1,5 @@
 import 'package:meta/meta.dart';
 
-import 'cache.dart';
-import 'lru_cache.dart';
-
 /// Represents a URL path that has been normalized.
 ///
 /// Normalization includes:
@@ -10,28 +7,11 @@ import 'lru_cache.dart';
 /// - Removing empty segments caused by multiple consecutive slashes.
 /// - Ensuring the path starts with a `/`.
 ///
-/// Instances created from a path string are interned using an LRU cache for
-/// efficiency, so identical paths will often share the same object instance.
-/// Segment-built instances ([fromSegments], [fromUri]) are never interned: a
-/// string cache key cannot tell a separator inside a segment from a real one.
-/// Equality compares segments, so this affects allocation only.
+/// Equality and [hashCode] are derived from [segments], so paths with the same
+/// segments are equal regardless of how they were built. Construction does no
+/// caching.
 @immutable
 class NormalizedPath {
-  /// Cache of interned instances.
-  ///
-  /// Defaults to an [LruCache] with 10,000 entries. Can be replaced with any
-  /// [Cache] implementation to tune caching behavior:
-  ///
-  /// ```dart
-  /// // Disable caching for high-cardinality workloads
-  /// NormalizedPath.interned = NoCache();
-  ///
-  /// // Use a larger cache
-  /// NormalizedPath.interned = LruCache(50000);
-  /// ```
-  static Cache<String, NormalizedPath> interned =
-      LruCache<String, NormalizedPath>(10000);
-
   /// The individual segments of the normalized path.
   /// For example, the path `/a/b/c` would have segments `['a', 'b', 'c']`.
   final List<String> segments;
@@ -44,20 +24,12 @@ class NormalizedPath {
 
   /// Creates a [NormalizedPath] from a given [path] string.
   ///
-  /// The provided [path] will be normalized by resolving `.` and `..` segments
-  /// and removing empty segments. The resulting [NormalizedPath] instance may be
-  /// retrieved from a cache if an identical normalized path has been created
-  /// recently.
-  factory NormalizedPath(final String path) {
-    var result = interned[path];
-    if (result == null) {
-      result = NormalizedPath._(_normalizeSegments(path.split('/')));
-      // intern for both normalized path and path
-      result = interned[result.path] ??= result;
-      interned[path] = result; // cache for original path as well
-    }
-    return result;
-  }
+  /// The provided [path] is split on `/` and normalized by resolving `.` and
+  /// `..` segments and removing empty ones. The path is not percent-decoded,
+  /// so an encoded separator such as `%2F` stays literal within its segment;
+  /// use [NormalizedPath.fromUri] to derive a path from a request.
+  factory NormalizedPath(final String path) =>
+      NormalizedPath._(_normalizeSegments(path.split('/')));
 
   /// Creates a [NormalizedPath] from segments that have already been split.
   ///

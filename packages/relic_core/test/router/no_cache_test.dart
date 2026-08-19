@@ -28,68 +28,32 @@ void main() {
     });
   });
 
-  group('Given NormalizedPath with NoCache', () {
-    late Cache<String, NormalizedPath> originalCache;
+  group('Given a Router (no result cache)', () {
+    test('when a request path is looked up twice '
+        'then routing works and the results are equal but not memoized', () {
+      final router = Router<int>()..get('/a/b', 1);
 
-    setUp(() {
-      originalCache = NormalizedPath.interned;
-      NormalizedPath.interned = const NoCache();
+      final first = router.lookupUri(Method.get, Uri.parse('/a/b'));
+      final second = router.lookupUri(Method.get, Uri.parse('/a/b'));
+
+      expect((first as RouterMatch<int>).value, equals(1));
+      expect((second as RouterMatch<int>).value, equals(1));
+      // No result cache: each lookup builds a fresh result.
+      expect(identical(first, second), isFalse);
     });
 
-    tearDown(() {
-      NormalizedPath.interned = originalCache;
-    });
+    test('when a route is added after a lookup '
+        'then the new route is found', () {
+      final router = Router<int>()..get('/a/b', 1);
 
-    test('when creating NormalizedPath '
-        'then normalization still works correctly', () {
-      final path = NormalizedPath('/a/b/c');
-      expect(path.segments, equals(['a', 'b', 'c']));
-      expect(path.toString(), equals('/a/b/c'));
-    });
+      expect(
+        router.lookupUri(Method.get, Uri.parse('/a/c')),
+        isA<PathMiss<int>>(),
+      );
 
-    test('when creating equivalent paths '
-        'then they are equal but not identical', () {
-      final path1 = NormalizedPath('/a/b');
-      final path2 = NormalizedPath('/a/b');
-      expect(path1, equals(path2));
-      expect(identical(path1, path2), isFalse);
-    });
-
-    test('when normalizing complex paths '
-        'then normalization is correct', () {
-      final path = NormalizedPath('/a/./b/../c');
-      expect(path.segments, equals(['a', 'c']));
-      expect(path.toString(), equals('/a/c'));
-    });
-  });
-
-  group('Given NormalizedPath with custom-sized LruCache', () {
-    late Cache<String, NormalizedPath> originalCache;
-
-    setUp(() {
-      originalCache = NormalizedPath.interned;
-      NormalizedPath.interned = LruCache<String, NormalizedPath>(2);
-    });
-
-    tearDown(() {
-      NormalizedPath.interned = originalCache;
-    });
-
-    test('when cache capacity is exceeded '
-        'then old entries are evicted', () {
-      final path1 = NormalizedPath('/a');
-      NormalizedPath('/b'); // fill cache
-      final path3 = NormalizedPath('/c');
-
-      // path1 should have been evicted from the small cache
-      final path1Again = NormalizedPath('/a');
-      expect(path1, equals(path1Again));
-      // With a cache of size 2, after /a, /b, /c, /a is evicted
-      // so creating /a again produces a new (non-identical) instance
-      expect(identical(path1, path1Again), isFalse);
-
-      // path3 and path2 should still be cached (or path3 and path1Again)
-      expect(identical(path3, NormalizedPath('/c')), isTrue);
+      router.get('/a/c', 2);
+      final hit = router.lookupUri(Method.get, Uri.parse('/a/c'));
+      expect((hit as RouterMatch<int>).value, equals(2));
     });
   });
 }

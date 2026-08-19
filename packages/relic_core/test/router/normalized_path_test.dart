@@ -130,38 +130,36 @@ void main() {
     });
   });
 
-  group('Interning', () {
+  group('Pure value semantics', () {
     test('Given identical path strings, '
         'when creating NormalizedPath, '
-        'then returns identical instances', () {
+        'then instances are equal but not interned to one object', () {
       final path1 = NormalizedPath('/a/b');
       final path2 = NormalizedPath('/a/b');
-      expect(identical(path1, path2), isTrue);
+      expect(path1, equals(path2));
+      expect(identical(path1, path2), isFalse);
     });
 
     test('Given logically equivalent path strings, '
         'when creating NormalizedPath, '
-        'then returns identical instances', () {
+        'then instances are equal but not identical', () {
       final path1 = NormalizedPath('a/b'); // No leading slash
       final path2 = NormalizedPath('/a/b/'); // Leading and trailing slash
       final path3 = NormalizedPath('a/./b'); // Contains '.' segment
-      expect(identical(path1, path2), isTrue);
-      expect(identical(path1, path3), isTrue);
+      expect(path1, equals(path2));
+      expect(path1, equals(path3));
+      expect(identical(path1, path2), isFalse);
     });
 
     test('Given different logical paths, '
         'when creating NormalizedPath, '
-        'then returns different instances', () {
+        'then instances are not equal', () {
       final path1 = NormalizedPath('/a/b');
       final path2 = NormalizedPath('/a/c');
       final path3 = NormalizedPath('/a');
-      expect(identical(path1, path2), isFalse);
-      expect(identical(path1, path3), isFalse);
+      expect(path1, isNot(equals(path2)));
+      expect(path1, isNot(equals(path3)));
     });
-
-    // Note: The interning cache (LruCache) has a size limit.
-    // Testing eviction is complex and depends on the exact cache size and usage order.
-    // We focus on the core interning guarantee for reasonably accessed paths.
   });
 
   group('Equality and HashCode', () {
