@@ -60,7 +60,10 @@ sealed class _DynamicSegment<T> {
 final class _Parameter<T> extends _DynamicSegment<T> {
   final String name;
 
-  _Parameter(this.name);
+  /// The parameter [name] as a [Symbol], precomputed for use during lookup.
+  final Symbol symbol;
+
+  _Parameter(this.name) : symbol = Symbol(name);
 }
 
 final class _Wildcard<T> extends _DynamicSegment<T> {}
@@ -392,7 +395,13 @@ final class PathTrie<T extends Object> {
     final bool backtrack = true,
   }) {
     return backtrack
-        ? _lookupRecursive(_root, normalizedPath, 0, _root.map, const {})
+        ? _lookupRecursive(
+            _root,
+            normalizedPath,
+            0,
+            _root.map,
+            <Symbol, String>{},
+          )
         : _lookupIterative(normalizedPath);
   }
 
@@ -432,17 +441,14 @@ final class PathTrie<T extends Object> {
 
     final segment = segments[index];
 
+    TrieMatch<T>? next(_TrieNode<T> node, final T Function(T)? map) =>
+        _lookupRecursive(node, normalizedPath, index + 1, map, parameters);
+
     // Try literal match first
     final child = node.children[segment];
     if (child != null) {
       final newMap = _composeMap(currentMap, child.map);
-      final result = _lookupRecursive(
-        child,
-        normalizedPath,
-        index + 1,
-        newMap,
-        parameters,
-      );
+      final result = next(child, newMap);
       if (result != null) return result;
       // Fall through to try dynamic segment
     }
@@ -452,9 +458,6 @@ final class PathTrie<T extends Object> {
     if (dynamicSegment != null) {
       final dynamicNode = dynamicSegment.node;
       final newMap = _composeMap(currentMap, dynamicNode.map);
-      final newParams = dynamicSegment is _Parameter<T>
-          ? {...parameters, Symbol(dynamicSegment.name): segment}
-          : parameters;
 
       if (dynamicSegment is _Tail<T>) {
         // Tail matches: check for value at this position
@@ -463,19 +466,18 @@ final class PathTrie<T extends Object> {
           value = newMap?.call(value) ?? value;
           return TrieMatch(
             value,
-            newParams,
+            parameters,
             normalizedPath.subPath(0, index),
             normalizedPath.subPath(index),
           );
         }
+      } else if (dynamicSegment is _Parameter<T>) {
+        parameters[dynamicSegment.symbol] = segment;
+        final result = next(dynamicNode, newMap);
+        if (result != null) return result;
+        parameters.remove(dynamicSegment.symbol); // backtrack
       } else {
-        return _lookupRecursive(
-          dynamicNode,
-          normalizedPath,
-          index + 1,
-          newMap,
-          newParams,
-        );
+        return next(dynamicNode, newMap);
       }
     }
 
@@ -524,7 +526,7 @@ final class PathTrie<T extends Object> {
         currentNode = dynamicSegment.node;
         updateMap();
         if (dynamicSegment case final _Parameter<T> parameter) {
-          parameters[Symbol(parameter.name)] = segment;
+          parameters[parameter.symbol] = segment;
         }
         if (dynamicSegment is _Tail<T>) break; // possible early match
       }

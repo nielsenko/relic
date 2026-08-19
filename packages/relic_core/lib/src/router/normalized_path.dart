@@ -43,14 +43,18 @@ class NormalizedPath {
 
   /// Creates a [NormalizedPath] from the path of [url].
   ///
-  /// This is the correct way to derive a path from a request. It reads
-  /// [Uri.pathSegments], which splits on the separator and only then decodes
-  /// each segment, so an encoded separator such as `%2F` stays inside its
-  /// segment. Building from [Uri.path] instead would decode first and then
-  /// split, introducing separators that no proxy in front of the server ever
-  /// saw.
-  factory NormalizedPath.fromUri(final Uri url) =>
-      NormalizedPath.fromSegments(url.pathSegments);
+  /// [Uri.pathSegments] splits on the separator before decoding, so an encoded
+  /// separator (`%2F`) stays within its segment.
+  factory NormalizedPath.fromUri(final Uri url) {
+    final segments = url.pathSegments;
+    // Reuse the unmodifiable pathSegments if clean
+    for (final segment in segments) {
+      if (segment.isEmpty || segment == '.' || segment == '..') {
+        return NormalizedPath._(_normalizeSegments(segments));
+      }
+    }
+    return NormalizedPath._(segments);
+  }
 
   /// Normalizes [segments] by resolving `.` and `..` and dropping empty ones.
   static List<String> _normalizeSegments(final Iterable<String> segments) {
