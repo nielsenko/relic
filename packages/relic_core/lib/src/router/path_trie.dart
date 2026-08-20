@@ -49,6 +49,10 @@ final class _TrieNode<T> {
 
   /// Indicates if this node holds a single value
   bool get isSingle => _hasNoChildren && value != null;
+
+  /// True if this node has both a literal child and a dynamic segment, so a
+  /// lookup here may have to backtrack from the literal to the dynamic branch.
+  bool get _isAmbiguous => children.isNotEmpty && dynamicSegment != null;
 }
 
 sealed class _DynamicSegment<T> {
@@ -77,6 +81,14 @@ final class _Tail<T> extends _DynamicSegment<T> {}
 final class PathTrie<T extends Object> {
   // Note: not final since we update in attach
   var _root = _TrieNode<T>();
+
+  /// True if any node has both literal children and a dynamic segment, the only
+  /// case where a lookup can match a literal, fail deeper, and need the dynamic
+  /// branch. Set during registration and never cleared, so it may over-report.
+  bool _needsBacktracking = false;
+
+  /// Whether lookups on this trie require backtracking. See [_needsBacktracking].
+  bool get needsBacktracking => _needsBacktracking;
 
   /// Adds a path and its associated value to the trie.
   ///
@@ -261,7 +273,8 @@ final class PathTrie<T extends Object> {
 
     for (int i = 0; i < segments.length; i++) {
       final segment = segments[i];
-      final dynamicSegment = currentNode.dynamicSegment;
+      final node = currentNode; // node this segment is added to
+      final dynamicSegment = node.dynamicSegment;
 
       if (segment.startsWith('**')) {
         // Handle tail segment
@@ -315,6 +328,8 @@ final class PathTrie<T extends Object> {
           () => _TrieNode<T>(),
         );
       }
+
+      if (node._isAmbiguous) _needsBacktracking = true;
     }
     return currentNode;
   }
@@ -379,22 +394,28 @@ final class PathTrie<T extends Object> {
           : (final v) => parentMap(childMap(v));
     }
     currentNode.children.addAll(node.children);
+
+    _needsBacktracking =
+        _needsBacktracking ||
+        trie._needsBacktracking ||
+        currentNode._isAmbiguous;
+
     trie._root = consume ? _TrieNode() : currentNode;
   }
 
   /// Looks up a [normalizedPath] in the trie and extracts parameters.
   ///
-  /// Literal segments are prioritized over parameters during matching.
-  /// If [backtrack] is set (default), then the search is allowed to use
-  /// backtracking.
+  /// Literal segments are prioritized over parameters. Backtracking runs only
+  /// when [backtrack] is true and the table [needsBacktracking]; otherwise a
+  /// faster non-backtracking walk is used. Passing `backtrack: false` lets a
+  /// literal shadow an overlapping parameter at the same level.
   ///
-  /// Returns a [TrieMatch] containing the associated value and extracted
-  /// parameters if a matching path is found, otherwise returns `null`.
+  /// Returns a [TrieMatch] if a matching path is found, otherwise `null`.
   TrieMatch<T>? lookup(
     final NormalizedPath normalizedPath, {
     final bool backtrack = true,
   }) {
-    return backtrack
+    return backtrack && _needsBacktracking
         ? _lookupRecursive(
             _root,
             normalizedPath,
@@ -494,23 +515,14 @@ final class PathTrie<T extends Object> {
     return (final v) => outer(inner(v));
   }
 
-  // coverage:ignore-start
-  // ignore: unused_element
+  /// Non-backtracking lookup, valid only when [needsBacktracking] is false:
+  /// commits to a literal match if present, else takes the single dynamic branch.
   TrieMatch<T>? _lookupIterative(final NormalizedPath normalizedPath) {
     final segments = normalizedPath.segments;
     final parameters = <Symbol, String>{};
 
     var currentNode = _root;
     var currentMap = currentNode.map;
-
-    // Helper function to update combinedMap when descending the trie
-    void updateMap() {
-      final cm = currentMap;
-      final m = currentNode.map;
-      currentMap = cm == null
-          ? m // may also be null
-          : (m == null ? cm : (final v) => cm(m(v))); // compose map function
-    }
 
     int i = 0;
     for (; i < segments.length; i++) {
@@ -519,12 +531,12 @@ final class PathTrie<T extends Object> {
       if (child != null) {
         // Prioritize literal match
         currentNode = child;
-        updateMap();
+        currentMap = _composeMap(currentMap, currentNode.map);
       } else {
         final dynamicSegment = currentNode.dynamicSegment;
         if (dynamicSegment == null) return null; // no match
         currentNode = dynamicSegment.node;
-        updateMap();
+        currentMap = _composeMap(currentMap, currentNode.map);
         if (dynamicSegment case final _Parameter<T> parameter) {
           parameters[parameter.symbol] = segment;
         }
@@ -544,7 +556,7 @@ final class PathTrie<T extends Object> {
       if (dynamicSegment is _Tail<T>) {
         currentNode = dynamicSegment.node;
         value = currentNode.value;
-        updateMap();
+        currentMap = _composeMap(currentMap, currentNode.map);
       }
     }
 
@@ -552,7 +564,6 @@ final class PathTrie<T extends Object> {
     value = currentMap?.call(value) ?? value;
     return TrieMatch(value, parameters, matchedPath, remainingPath);
   }
-  // coverage:ignore-end
 
   /// Returns true if the path trie has no routes.
   bool get isEmpty => _root.isEmpty;
