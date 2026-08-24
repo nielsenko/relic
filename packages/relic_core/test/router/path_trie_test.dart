@@ -186,6 +186,43 @@ void main() {
         expect(result.parameters, equals({#c: 'w'}));
       });
 
+      group('Given the same parameter name bound at two levels', () {
+        setUp(() {
+          trie.add(NormalizedPath('/:x/lit/:x/a'), 1);
+          trie.add(NormalizedPath('/:x/:y/c'), 2);
+        });
+
+        test('when the inner branch matches, '
+            'then the inner binding shadows the outer one', () {
+          final result = trie.lookup(NormalizedPath('/v/lit/w/a'));
+          expect(result, isNotNull);
+          expect(result!.value, equals(1));
+          expect(result.parameters, equals({#x: 'w'}));
+        });
+
+        test('when the inner branch fails, '
+            'then backtracking restores the outer binding', () {
+          final result = trie.lookup(NormalizedPath('/v/lit/c'));
+          expect(result, isNotNull);
+          expect(result!.value, equals(2));
+          expect(result.parameters, equals({#x: 'v', #y: 'lit'}));
+        });
+      });
+
+      test('Given a parameter route that leads to a dead end, '
+          'when an alternative without that parameter matches, '
+          'then the abandoned binding is not reported', () {
+        trie.add(NormalizedPath('/a/:x/b'), 1);
+        trie.add(NormalizedPath('/**'), 2);
+
+        // /a/v/c binds :x=v, dead-ends on 'c', then backtracks to the tail.
+        final result = trie.lookup(NormalizedPath('/a/v/c'));
+        expect(result, isNotNull);
+        expect(result!.value, equals(2));
+        expect(result.parameters, isEmpty);
+        expect(result.remaining.path, equals('/a/v/c'));
+      });
+
       test('Given backtracking scenario with no valid match, '
           'when all paths exhausted, '
           'then returns null', () {

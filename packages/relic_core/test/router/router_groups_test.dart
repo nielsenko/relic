@@ -159,4 +159,30 @@ void main() {
     final router = Router<int>();
     expect(() => router.group('/api/**'), throwsArgumentError);
   });
+
+  group(
+    'Given routes needing backtracking added to a group after creation',
+    () {
+      late Router<int> router;
+
+      setUp(() {
+        router = Router<int>();
+        router.group('/api')
+          ..get('/users/x', 1)
+          ..get('/users/:id/y', 2);
+      });
+
+      test('when looking up through the parent, '
+          'then the parent backtracks into the group', () {
+        final result = router.lookup(Method.get, '/api/users/x/y');
+        expectLookupResult(result, 2, {#id: 'x'});
+      });
+
+      test('when looking up the literal route through the parent, '
+          'then it still wins over the parameter route', () {
+        final result = router.lookup(Method.get, '/api/users/x');
+        expectLookupResult(result, 1);
+      });
+    },
+  );
 }
