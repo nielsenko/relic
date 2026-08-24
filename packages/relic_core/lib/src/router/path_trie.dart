@@ -472,10 +472,15 @@ final class PathTrie<T extends Object> {
           );
         }
       } else if (dynamicSegment is _Parameter<T>) {
+        final prev = parameters[dynamicSegment.symbol];
         parameters[dynamicSegment.symbol] = segment;
         final result = next(dynamicNode, newMap);
         if (result != null) return result;
-        parameters.remove(dynamicSegment.symbol); // backtrack
+        if (prev == null) {
+          parameters.remove(dynamicSegment.symbol);
+        } else {
+          parameters[dynamicSegment.symbol] = prev;
+        }
       } else {
         return next(dynamicNode, newMap);
       }
