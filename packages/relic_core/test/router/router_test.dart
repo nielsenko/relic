@@ -658,4 +658,20 @@ void main() {
       );
     });
   });
+
+  group('Given a Router looked up by Uri', () {
+    test('when a route is added after a lookup, '
+        'then the new route is found', () {
+      final router = Router<int>()..get('/a/b', 1);
+
+      expect(
+        router.lookupUri(Method.get, Uri.parse('/a/c')),
+        isA<PathMiss<int>>(),
+      );
+
+      router.get('/a/c', 2);
+      final hit = router.lookupUri(Method.get, Uri.parse('/a/c'));
+      expect((hit as RouterMatch<int>).value, equals(2));
+    });
+  });
 }
