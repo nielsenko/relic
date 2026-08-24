@@ -39,6 +39,34 @@ void main() {
       );
     });
 
+    test('Given a RelicApp with a route, '
+        'when calling lookupUri, '
+        'then it delegates to the underlying router', () {
+      Response handler(final Request req) => Response.ok();
+      final app = RelicApp()..get('/a/b', handler);
+
+      // The query and fragment are not part of the route path.
+      final hit = app.lookupUri(
+        Method.get,
+        Uri.parse('http://example.com/a/b?q=1#frag'),
+      );
+      expect(hit, isA<RouterMatch<Handler>>());
+      expect((hit as RouterMatch<Handler>).value, same(handler));
+
+      expect(
+        app.lookupUri(Method.post, Uri.parse('http://example.com/a/b')),
+        isA<MethodMiss<Handler>>(),
+      );
+      expect(
+        app.lookupUri(
+          Method.get,
+          Uri.parse('http://example.com/nope'),
+          backtrack: false,
+        ),
+        isA<PathMiss<Handler>>(),
+      );
+    });
+
     test('Given a RelicApp, '
         'when calling run with adapter factory, '
         'then it creates a RelicServer and mounts the handler', () async {
