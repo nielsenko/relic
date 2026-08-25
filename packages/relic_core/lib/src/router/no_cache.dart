@@ -1,14 +1,7 @@
 import 'cache.dart';
 
-/// A no-op [Cache] implementation that never stores or retrieves values.
-///
-/// Useful for high-cardinality workloads where caching causes more overhead
-/// than it saves (e.g., many unique dynamic paths like `/users/:id`).
-///
-/// Example:
-/// ```dart
-/// NormalizedPath.interned = NoCache();
-/// ```
+/// A no-op [Cache] that never stores or retrieves values, for opting out of
+/// caching in high-cardinality workloads where it costs more than it saves.
 final class NoCache<K, V> implements Cache<K, V> {
   /// Creates a no-op cache.
   const NoCache();

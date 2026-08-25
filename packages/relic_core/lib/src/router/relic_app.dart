@@ -192,6 +192,13 @@ final class RelicApp implements RelicRouter, _Reloadable {
     final NormalizedPath normalizedPath, {
     final bool backtrack = true,
   }) => delegate.lookupPath(method, normalizedPath, backtrack: backtrack);
+
+  @override
+  LookupResult<Handler> lookupUri(
+    final Method method,
+    final Uri url, {
+    final bool backtrack = true,
+  }) => delegate.lookupUri(method, url, backtrack: backtrack);
 }
 
 /// Developer tools for inspecting and debugging a [RelicApp].
