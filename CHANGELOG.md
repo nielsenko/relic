@@ -1,3 +1,25 @@
+## 2.0.0-rc.1
+- refactor!: Drop `NormalizedPath` interning ([#375](https://github.com/serverpod/relic/pull/375)) - fixes [#118](https://github.com/serverpod/relic/issues/118), [#342](https://github.com/serverpod/relic/issues/342), closes [#344](https://github.com/serverpod/relic/issues/344)
+  - BREAKING: `NormalizedPath.interned` is removed. Construction no longer caches, so there is no per-isolate cache to size, and no input that can thrash it
+  - Add `Router.lookupUri(method, url)`, the entry point for request routing: it derives the path with `NormalizedPath.fromUri` and looks it up with `lookupPath`
+  - Routing recovers most of the lost throughput by pre-computing repeated work and by undoing parameter bindings in place while backtracking, instead of copying the parameter map at every level
+- fix!: Address security audit findings ([#369](https://github.com/serverpod/relic/pull/369))
+  - BREAKING: Cross-origin WebSocket upgrades are rejected with 403 by default; pass `WebSocketUpgrade(..., allowAnyOrigin: true)` to accept them. Only the host is compared, since a TLS-terminating proxy changes scheme and port
+  - BREAKING: Header names and values are validated on assignment. CR, LF, NUL, and invalid names now throw where every header write funnels, rather than reaching the wire
+  - BREAKING: Malformed auth headers and non-token MIME type parts are rejected where they were previously tolerated
+  - The request path is split into segments before percent-decoding, so an encoded separator (`%2F`) can no longer introduce a path boundary that no upstream proxy saw; `NormalizedPath.fromUri` names the safe conversion
+  - The path is normalized before the routing host is prepended, so a path resolving upwards can no longer pop the host and select another virtual host
+  - Auth headers are parsed with the linear header scanner: one pass with no quadratic backtracking on a long value, and text between auth-params is rejected instead of skipped
+  - `Content-Disposition` parameter values and `AuthenticationHeader` challenge parts are escaped and validated, so a quote in a filename or realm can no longer end the value and graft on another parameter or challenge
+  - The token grammar is enforced on MIME type parts, which `io.ContentType` took separately and thus bypassed the CR/LF check applied to ordinary header values
+  - Multi-range responses are streamed lazily and the range count is capped, so a short request can no longer ask for many times the file size
+  - Multipart boundaries are drawn from a cryptographic generator instead of ~20 bits from `Random`
+  - The adapter dispatch is awaited, so a response that fails to write yields a 500 instead of leaving the connection open and the client waiting
+  - Detached (hijacked and upgraded) connections are tracked by the adapter: counted by `connectionsInfo()`, drained and sent a 1001 close on graceful shutdown, and destroyed on `close(force: true)`
+  - `use()` on a catch-all route now applies to the prefix itself, so `/api` no longer bypasses the middleware that `/api/keys` runs
+  - Add `Token68` for the RFC 9110 `token68` form, used when validating a single-token `WWW-Authenticate` challenge
+  - docs: The static file handler never filtered hidden files; the documentation no longer claims it does. Every file in the served directory is served, dot files included
+
 ## 2.0.0-beta.1
 - feat: Add `CacheControlHeader.parseStrict` for validating own values ([#370](https://github.com/serverpod/relic/pull/370))
   - Throws a `FormatException` for an unrecognized directive or a malformed delta-seconds value instead of ignoring it
