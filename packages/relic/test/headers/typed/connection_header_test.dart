@@ -134,7 +134,7 @@ void main() {
           headers: {'connection': 'bad directive'},
         );
 
-        expect(Headers.connection[headers].valueOrNullIfInvalid, isNull);
+        expect(headers.tryGet(Headers.connection), isNull);
         expect(() => headers.connection, throwsInvalidHeader);
       });
     });

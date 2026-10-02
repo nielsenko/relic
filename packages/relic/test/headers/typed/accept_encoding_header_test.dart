@@ -343,7 +343,7 @@ void main() {
           headers: {'accept-encoding': ''},
         );
 
-        expect(Headers.acceptEncoding[headers].valueOrNullIfInvalid, isNull);
+        expect(headers.tryGet(Headers.acceptEncoding), isNull);
         expect(() => headers.acceptEncoding, throwsInvalidHeader);
       });
     });

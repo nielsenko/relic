@@ -137,10 +137,18 @@ void main() {
               headers: {'access-control-allow-credentials': ''},
             );
 
-            final header = Headers.accessControlAllowCredentials[headers];
-            expect(header.valueOrNullIfInvalid, isNull);
-            expect(() => header.valueOrNull, throwsInvalidHeader);
-            expect(() => header.value, throwsInvalidHeader);
+            expect(
+              headers.tryGet(Headers.accessControlAllowCredentials),
+              isNull,
+            );
+            expect(
+              () => headers(Headers.accessControlAllowCredentials),
+              throwsInvalidHeader,
+            );
+            expect(
+              () => headers.get(Headers.accessControlAllowCredentials),
+              throwsInvalidHeader,
+            );
           });
         },
       );

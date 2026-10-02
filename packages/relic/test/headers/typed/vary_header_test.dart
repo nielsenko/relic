@@ -153,7 +153,7 @@ void main() {
           headers: {'vary': ''},
         );
 
-        expect(Headers.vary[headers].valueOrNullIfInvalid, isNull);
+        expect(headers.tryGet(Headers.vary), isNull);
         expect(() => headers.vary, throwsInvalidHeader);
       });
     });

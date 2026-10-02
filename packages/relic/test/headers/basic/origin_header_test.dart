@@ -153,7 +153,7 @@ void main() {
           touchHeaders: (_) {},
           headers: {'origin': ''},
         );
-        expect(Headers.origin[headers].valueOrNullIfInvalid, isNull);
+        expect(headers.tryGet(Headers.origin), isNull);
         expect(() => headers.origin, throwsInvalidHeader);
       });
     });
@@ -166,7 +166,7 @@ void main() {
           headers: {'origin': 'h@ttp://example.com'},
         );
 
-        expect(Headers.origin[headers].valueOrNullIfInvalid, isNull);
+        expect(headers.tryGet(Headers.origin), isNull);
         expect(() => headers.origin, throwsInvalidHeader);
       });
     });

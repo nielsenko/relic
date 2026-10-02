@@ -1,4 +1,5 @@
 import 'dart:collection';
+import 'dart:typed_data';
 
 import 'package:http_parser/http_parser.dart';
 
@@ -69,7 +70,23 @@ int parseInt(final String value) {
 /// Encode an integer to a iterable of string.
 Iterable<String> encodeInt(final int i) => [i.toString()];
 
-const intHeaderCodec = HeaderCodec.single(parseInt, encodeInt);
+/// Parses a run of ASCII digits, or returns null for anything else so the
+/// text parser decides. Up to 18 digits, which always fits an int.
+int? parseIntBytes(final Uint8List bytes) {
+  if (bytes.isEmpty || bytes.length > 18) return null;
+  var value = 0;
+  for (final b in bytes) {
+    if (b < 0x30 || b > 0x39) return null;
+    value = value * 10 + (b - 0x30);
+  }
+  return value;
+}
+
+const intHeaderCodec = HeaderCodec.single(
+  parseInt,
+  encodeInt,
+  decodeBytes: parseIntBytes,
+);
 
 /// Parses a positive integer from the given [value] and returns it as an `int`.
 ///
@@ -89,6 +106,7 @@ Iterable<String> encodePositiveInt(final int i) =>
 const positiveIntHeaderCodec = HeaderCodec.single(
   parsePositiveInt,
   encodePositiveInt,
+  decodeBytes: parseIntBytes,
 );
 
 /// Parses a boolean from the given [value] and returns it as a `bool`.

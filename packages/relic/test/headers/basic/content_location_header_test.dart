@@ -153,7 +153,7 @@ void main() {
           headers: {'content-location': 'ht!tp://invalid-url'},
         );
 
-        expect(Headers.contentLocation[headers].valueOrNullIfInvalid, isNull);
+        expect(headers.tryGet(Headers.contentLocation), isNull);
         expect(() => headers.contentLocation, throwsInvalidHeader);
       });
     });

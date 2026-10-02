@@ -167,7 +167,7 @@ void main() {
           headers: {'age': ''},
         );
 
-        expect(Headers.age[headers].valueOrNullIfInvalid, isNull);
+        expect(headers.tryGet(Headers.age), isNull);
         expect(() => headers.age, throwsInvalidHeader);
       });
     });
@@ -180,7 +180,7 @@ void main() {
           headers: {'age': 'invalid'},
         );
 
-        expect(Headers.age[headers].valueOrNullIfInvalid, isNull);
+        expect(headers.tryGet(Headers.age), isNull);
         expect(() => headers.age, throwsInvalidHeader);
       });
     });

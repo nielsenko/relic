@@ -215,7 +215,7 @@ void main() {
           headers: {'accept': 'invalid'},
         );
 
-        expect(Headers.accept[headers].valueOrNullIfInvalid, isNull);
+        expect(headers.tryGet(Headers.accept), isNull);
         expect(() => headers.accept, throwsInvalidHeader);
       });
     });

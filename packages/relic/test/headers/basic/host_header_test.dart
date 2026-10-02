@@ -84,18 +84,20 @@ void main() {
       },
     );
 
-    test('when a Host header with an invalid value is passed '
-        'then the server does not respond with a bad request if the headers '
-        'is not actually used', () async {
-      final headers = await getServerRequestHeaders(
-        server: server,
-        touchHeaders: (_) {}, // server don't use the header
-        headers: {'host': 'http://example.com'}, // sch eme not allowed!
-      );
+    test(
+      'when a Host header with an invalid value is passed '
+      'then the server does not respond with a bad request if the headers is not actually used',
+      () async {
+        final headers = await getServerRequestHeaders(
+          server: server,
+          touchHeaders: (_) {}, // server don't use the header
+          headers: {'host': 'http://example.com'}, // sch eme not allowed!
+        );
 
-      expect(Headers.host[headers].valueOrNullIfInvalid, isNull);
-      expect(() => headers.host, throwsInvalidHeader);
-    });
+        expect(headers.tryGet(Headers.host), isNull);
+        expect(() => headers.host, throwsInvalidHeader);
+      },
+    );
 
     // Basic host parsing tests
     parameterizedTest<

@@ -142,10 +142,7 @@ void main() {
               headers: {'access-control-request-headers': ''},
             );
 
-            expect(
-              Headers.accessControlRequestHeaders[headers].valueOrNullIfInvalid,
-              isNull,
-            );
+            expect(headers.tryGet(Headers.accessControlRequestHeaders), isNull);
             expect(
               () => headers.accessControlRequestHeaders,
               throwsInvalidHeader,

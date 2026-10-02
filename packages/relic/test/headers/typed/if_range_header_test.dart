@@ -143,7 +143,7 @@ void main() {
           headers: {'if-range': 'invalid-value'},
         );
 
-        expect(Headers.ifRange[headers].valueOrNullIfInvalid, isNull);
+        expect(headers.tryGet(Headers.ifRange), isNull);
         expect(() => headers.ifRange, throwsInvalidHeader);
       });
     });

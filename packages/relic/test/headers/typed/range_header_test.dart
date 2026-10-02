@@ -200,7 +200,7 @@ void main() {
           headers: {'range': 'invalid-range'},
         );
 
-        expect(Headers.range[headers].valueOrNullIfInvalid, isNull);
+        expect(headers.tryGet(Headers.range), isNull);
         expect(() => headers.range, throwsInvalidHeader);
       });
     });

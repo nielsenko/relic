@@ -125,7 +125,7 @@ void main() {
           headers: {'accept-ranges': ''},
         );
 
-        expect(Headers.acceptRanges[headers].valueOrNullIfInvalid, isNull);
+        expect(headers.tryGet(Headers.acceptRanges), isNull);
         expect(() => headers.acceptRanges, throwsInvalidHeader);
       });
     });

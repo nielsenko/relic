@@ -143,7 +143,7 @@ void main() {
         );
 
         expect(headers, isNotNull);
-        expect(Headers.cookie[headers].valueOrNullIfInvalid, isNull);
+        expect(headers.tryGet(Headers.cookie), isNull);
         expect(() => headers.cookie, throwsInvalidHeader);
       },
     );

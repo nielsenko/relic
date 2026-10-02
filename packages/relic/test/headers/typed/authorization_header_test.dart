@@ -451,7 +451,7 @@ void main() {
           headers: {'authorization': ''},
         );
 
-        expect(Headers.authorization[headers].valueOrNullIfInvalid, isNull);
+        expect(headers.tryGet(Headers.authorization), isNull);
         expect(() => headers.authorization, throwsInvalidHeader);
       });
     });
@@ -464,7 +464,7 @@ void main() {
           headers: {'authorization': 'InvalidFormat'},
         );
 
-        expect(Headers.authorization[headers].valueOrNullIfInvalid, isNull);
+        expect(headers.tryGet(Headers.authorization), isNull);
         expect(() => headers.authorization, throwsInvalidHeader);
       });
     });

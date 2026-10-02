@@ -166,17 +166,17 @@ void serveTests(final AdapterConformance conformance) {
   test('Given custom request headers, when a request is made, '
       'then the handler receives them', () async {
     const multi = HeaderAccessor<List<String>>(
-      'multi-header',
+      HeaderName.custom('multi-header'),
       HeaderCodec(parseStringList, encodeStringList),
     );
     await scheduleServer((final req) {
-      expect(req.headers, containsPair('custom-header', ['client value']));
+      expect(req.headers['custom-header'], ['client value']);
 
       // A multi-value header arrives as one field and is split by the
       // typed accessor, whatever the adapter did with it on the way in.
-      expect(req.headers, containsPair('multi-header', ['foo,bar,baz']));
+      expect(req.headers['multi-header'], ['foo,bar,baz']);
 
-      expect(multi[req.headers].value, ['foo', 'bar', 'baz']);
+      expect(req.headers.get(multi), ['foo', 'bar', 'baz']);
 
       return syncHandler(req);
     });
@@ -408,7 +408,7 @@ void serveTests(final AdapterConformance conformance) {
       );
 
       final response = await get();
-      expect(response.headers, containsPair(poweredBy, 'myServer'));
+      expect(response.headers[poweredBy], 'myServer');
     });
   });
 

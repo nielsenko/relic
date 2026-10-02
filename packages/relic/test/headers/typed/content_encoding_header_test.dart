@@ -171,7 +171,7 @@ void main() {
           headers: {'content-encoding': ''},
         );
 
-        expect(Headers.contentEncoding[headers].valueOrNullIfInvalid, isNull);
+        expect(headers.tryGet(Headers.contentEncoding), isNull);
         expect(() => headers.contentEncoding, throwsInvalidHeader);
       });
     });

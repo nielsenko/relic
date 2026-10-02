@@ -129,10 +129,7 @@ void main() {
           headers: {'access-control-request-method': ''},
         );
 
-        expect(
-          Headers.accessControlRequestMethod[headers].valueOrNullIfInvalid,
-          isNull,
-        );
+        expect(headers.tryGet(Headers.accessControlRequestMethod), isNull);
         expect(() => headers.accessControlRequestMethod, throwsInvalidHeader);
       });
     });

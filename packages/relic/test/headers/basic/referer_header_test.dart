@@ -155,7 +155,7 @@ void main() {
           headers: {'referer': 'ht!tp://invalid-url'},
         );
 
-        expect(Headers.referer[headers].valueOrNullIfInvalid, isNull);
+        expect(headers.tryGet(Headers.referer), isNull);
         expect(() => headers.referer, throwsInvalidHeader);
       });
     });

@@ -367,7 +367,7 @@ void main() {
           headers: {'accept-language': ''},
         );
 
-        expect(Headers.acceptLanguage[headers].valueOrNullIfInvalid, isNull);
+        expect(headers.tryGet(Headers.acceptLanguage), isNull);
         expect(() => headers.acceptLanguage, throwsInvalidHeader);
       });
     });

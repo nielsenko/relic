@@ -113,15 +113,17 @@ void main() {
 
   group('Given an Access-Control-Max-Age header '
       'when an invalid raw header is passed', () {
-    final header =
-        Headers.accessControlMaxAge[Headers.fromMap({
-          'access-control-max-age': ['invalid'],
-        })];
+    final headers = Headers.fromMap({
+      'access-control-max-age': ['invalid'],
+    });
 
-    test('then valueOrNullIfInvalid should return null', () {
-      expect(header.valueOrNullIfInvalid, isNull);
-      expect(() => header.valueOrNull, throwsInvalidHeader);
-      expect(() => header.value, throwsInvalidHeader);
+    test('then tryGet returns null and call and get throw', () {
+      expect(headers.tryGet(Headers.accessControlMaxAge), isNull);
+      expect(() => headers(Headers.accessControlMaxAge), throwsInvalidHeader);
+      expect(
+        () => headers.get(Headers.accessControlMaxAge),
+        throwsInvalidHeader,
+      );
     });
   });
 }

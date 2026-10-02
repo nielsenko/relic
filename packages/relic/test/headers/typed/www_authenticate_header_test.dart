@@ -224,7 +224,7 @@ void main() {
           headers: {'www-authenticate': 'InvalidHeader'},
         );
 
-        expect(Headers.wwwAuthenticate[headers].valueOrNullIfInvalid, isNull);
+        expect(headers.tryGet(Headers.wwwAuthenticate), isNull);
         expect(() => headers.wwwAuthenticate, throwsInvalidHeader);
       },
     );

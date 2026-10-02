@@ -129,7 +129,7 @@ void main() {
           headers: {'from': ''},
         );
 
-        expect(Headers.from[headers].valueOrNullIfInvalid, isNull);
+        expect(headers.tryGet(Headers.from), isNull);
         expect(() => headers.from, throwsInvalidHeader);
       });
     });

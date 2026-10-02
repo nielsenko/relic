@@ -124,7 +124,7 @@ void main() {
           headers: {'etag': '123456'},
         );
 
-        expect(Headers.etag[headers].valueOrNullIfInvalid, isNull);
+        expect(headers.tryGet(Headers.etag), isNull);
         expect(() => headers.etag, throwsInvalidHeader);
       });
     });

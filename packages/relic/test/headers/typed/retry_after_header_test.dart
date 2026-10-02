@@ -194,7 +194,7 @@ void main() {
           headers: {'retry-after': 'invalid'},
         );
 
-        expect(Headers.retryAfter[headers].valueOrNullIfInvalid, isNull);
+        expect(headers.tryGet(Headers.retryAfter), isNull);
         expect(() => headers.retryAfter, throwsInvalidHeader);
       },
     );

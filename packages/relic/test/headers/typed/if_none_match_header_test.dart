@@ -211,7 +211,7 @@ void main() {
           headers: {'if-none-match': 'invalid-etag'},
         );
 
-        expect(Headers.ifNoneMatch[headers].valueOrNullIfInvalid, isNull);
+        expect(headers.tryGet(Headers.ifNoneMatch), isNull);
         expect(() => headers.ifNoneMatch, throwsInvalidHeader);
       });
     });

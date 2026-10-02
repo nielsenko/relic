@@ -95,22 +95,20 @@ void main() {
     (final v) => 'Given a "${v.key}" header when calling Headers.build',
     (final v) {
       Headers.build((final mh) {
-        final header = v[mh];
-        singleTest('then raw value not set', mh, isNot(contains(v.key)));
-        singleTest('then not isSet', header.isSet, isFalse);
+        singleTest('then raw value not set', mh.contains(v.key), isFalse);
         singleTest(
-          'then set fails if type of value wrong',
-          () => header.set(Object()),
+          'then assign fails if type of value wrong',
+          () => mh.assign(v, Object()),
           throwsA(isA<TypeError>()),
         );
         singleTest(
-          'then set to null succeeds',
-          () => header.set(null),
+          'then assign to null succeeds',
+          () => mh.assign(v, null),
           returnsNormally,
         );
         singleTest(
-          'then set succeeds if value is correct type',
-          () => header.set(header.valueOrNull),
+          'then assign succeeds if value is correct type',
+          () => mh.assign(v, mh(v)),
           returnsNormally,
         );
       });
@@ -122,18 +120,11 @@ void main() {
     (final v) => 'Given a "${v.key}" header with no raw value',
     (final v) {
       late final headers = Headers.empty();
-      late final header = v[headers];
 
-      singleTest('then raw value not set', headers, isNot(contains(v.key)));
-      singleTest('then isSet is false', header.isSet, isFalse);
-      singleTest('then isValid is false', header.isValid, isFalse);
-      singleTest('then valueOrNull is null', header.valueOrNull, isNull);
-      singleTest(
-        'then valueOrNullIfInvalid is null',
-        header.valueOrNullIfInvalid,
-        isNull,
-      );
-      singleTest('then value throws', () => header.value, throwsMissingHeader);
+      singleTest('then raw value not set', headers.contains(v.key), isFalse);
+      singleTest('then call is null', headers(v), isNull);
+      singleTest('then tryGet is null', headers.tryGet(v), isNull);
+      singleTest('then get throws', () => headers.get(v), throwsMissingHeader);
     },
     variants: Headers.all,
   );
@@ -142,24 +133,13 @@ void main() {
     (final v) => 'Given a "${v.key}" header with an empty raw value',
     (final v) {
       late final headers = Headers.fromMap({
-        v.key: [''],
+        v.key.lower: [''],
       });
-      late final header = v[headers];
 
-      singleTest('then raw value set', headers, contains(v.key));
-      singleTest('then isSet is true', header.isSet, isTrue);
-      singleTest('then isValid is false', header.isValid, isFalse);
-      singleTest(
-        'then valueOrNull throws',
-        () => header.valueOrNull,
-        throwsInvalidHeader,
-      );
-      singleTest(
-        'then valueOrNullIfInvalid is null',
-        header.valueOrNullIfInvalid,
-        isNull,
-      );
-      singleTest('then value throws', () => header.value, throwsInvalidHeader);
+      singleTest('then raw value set', headers.contains(v.key), isTrue);
+      singleTest('then call throws', () => headers(v), throwsInvalidHeader);
+      singleTest('then tryGet is null', headers.tryGet(v), isNull);
+      singleTest('then get throws', () => headers.get(v), throwsInvalidHeader);
     },
     variants: Headers.all,
   );
@@ -167,19 +147,14 @@ void main() {
   parameterizedGroup(
     (final v) => 'Given a "${v.key}" header with an invalid raw value',
     (final v) {
-      late final header =
-          v[Headers.fromMap({
-            v.key: ['invalid'],
-          })];
+      late final headers = Headers.fromMap({
+        v.key.lower: ['invalid'],
+      });
 
-      singleTest('then isSet is true', header.isSet, isTrue);
-      singleTest('then isValid is false', header.isValid, isFalse);
-      singleTest(
-        'then valueOrNull throws',
-        () => header.valueOrNull,
-        throwsInvalidHeader,
-      );
-      singleTest('then value throws', () => header.value, throwsInvalidHeader);
+      singleTest('then raw value set', headers.contains(v.key), isTrue);
+      singleTest('then call throws', () => headers(v), throwsInvalidHeader);
+      singleTest('then tryGet is null', headers.tryGet(v), isNull);
+      singleTest('then get throws', () => headers.get(v), throwsInvalidHeader);
     },
     variants: Headers.all.difference({
       // TODO(nielsenko): Go over these exceptions and find out if they are correct. Not all are for sure!
@@ -500,7 +475,7 @@ void main() {
 
       test('when round-tripping', () {
         final headers1 = Headers.build(v.mutator);
-        final header1 = v.accessor.getValueFrom(headers1);
+        final header1 = headers1(v.accessor);
 
         final raw = v.accessor.codec.encode(header1!);
         final header3 = v.accessor.codec.decode(raw);
@@ -516,8 +491,8 @@ void main() {
         final headers2 = Headers.build(v.mutator);
         expect(identical(headers1, headers2), isFalse);
 
-        final header1 = v.accessor.getValueFrom(headers1);
-        final header2 = v.accessor.getValueFrom(headers2);
+        final header1 = headers1(v.accessor);
+        final header2 = headers2(v.accessor);
         expect(header1, isNotNull);
         expect(header2, isNotNull);
 
@@ -540,9 +515,9 @@ void main() {
           expect(header1.hashCode, equals(header3.hashCode));
         }
         final headers4 = Headers.build((final mh) => mh[v.accessor.key] = raw);
-        expect(v.accessor.isSetIn(headers4), isTrue);
-        expect(v.accessor.isValidIn(headers4), isTrue);
-        final header4 = v.accessor.getValueFrom(headers4);
+        expect(headers4.contains(v.accessor.key), isTrue);
+        expect(headers4.tryGet(v.accessor), isNotNull);
+        final header4 = headers4(v.accessor);
         if (header1 is! List && header1 is! Set) {
           // We don't control hashCode for pure List and Set.
           expect(header1, equals(header4));

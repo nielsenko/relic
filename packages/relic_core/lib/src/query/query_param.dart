@@ -18,7 +18,7 @@ typedef RawQueryParam = String;
 /// }
 /// ```
 class QueryParam<T extends Object>
-    extends ReadOnlyAccessor<T, String, RawQueryParam> {
+    extends FunctionAccessor<T, String, RawQueryParam> {
   const QueryParam(super.key, super.decode);
 }
 

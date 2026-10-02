@@ -119,7 +119,7 @@ void main() {
           headers: {'permissions-policy': ''},
         );
 
-        expect(Headers.permissionsPolicy[headers].valueOrNullIfInvalid, isNull);
+        expect(headers.tryGet(Headers.permissionsPolicy), isNull);
         expect(() => headers.permissionsPolicy, throwsInvalidHeader);
       });
     });

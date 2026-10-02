@@ -128,7 +128,7 @@ void main() {
           headers: {'allow': ''},
         );
 
-        expect(Headers.allow[headers].valueOrNullIfInvalid, isNull);
+        expect(headers.tryGet(Headers.allow), isNull);
       });
     });
   });

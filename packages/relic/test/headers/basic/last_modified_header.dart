@@ -131,7 +131,7 @@ void main() {
           headers: {'last-modified': ''},
         );
 
-        expect(Headers.lastModified[headers].valueOrNullIfInvalid, isNull);
+        expect(headers.tryGet(Headers.lastModified), isNull);
         expect(() => headers.lastModified, throwsInvalidHeader);
       });
     });
@@ -144,7 +144,7 @@ void main() {
           headers: {'last-modified': 'invalid-date-format'},
         );
 
-        expect(Headers.lastModified[headers].valueOrNullIfInvalid, isNull);
+        expect(headers.tryGet(Headers.lastModified), isNull);
         expect(() => headers.lastModified, throwsInvalidHeader);
       });
     });

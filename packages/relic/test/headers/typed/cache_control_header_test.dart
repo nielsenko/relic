@@ -338,87 +338,63 @@ void main() {
           headers: {'cache-control': 'public, private'},
         );
 
-        expect(Headers.cacheControl[headers].valueOrNullIfInvalid, isNull);
+        expect(headers.tryGet(Headers.cacheControl), isNull);
         expect(() => headers.cacheControl, throwsInvalidHeader);
       });
     });
   });
 
   group('Given CacheControlHeader.parseStrict', () {
-    test(
-      'when a valid Cache-Control value is passed '
-      'then it parses the directives like the lenient parser',
-      () {
-        final header = CacheControlHeader.parseStrict(['public, max-age=3600']);
+    test('when a valid Cache-Control value is passed '
+        'then it parses the directives like the lenient parser', () {
+      final header = CacheControlHeader.parseStrict(['public, max-age=3600']);
 
-        expect(header.publicCache, isTrue);
-        expect(header.maxAge, 3600);
-      },
-    );
+      expect(header.publicCache, isTrue);
+      expect(header.maxAge, 3600);
+    });
 
-    test(
-      'when an unrecognized directive is passed '
-      'then a FormatException is thrown',
-      () {
-        expect(
-          () => CacheControlHeader.parseStrict(['invalid-directive']),
-          throwsFormatException,
-        );
-      },
-    );
+    test('when an unrecognized directive is passed '
+        'then a FormatException is thrown', () {
+      expect(
+        () => CacheControlHeader.parseStrict(['invalid-directive']),
+        throwsFormatException,
+      );
+    });
 
-    test(
-      'when a known and an unrecognized directive are mixed '
-      'then a FormatException is thrown',
-      () {
-        expect(
-          () => CacheControlHeader.parseStrict(['public, invalid-directive']),
-          throwsFormatException,
-        );
-      },
-    );
+    test('when a known and an unrecognized directive are mixed '
+        'then a FormatException is thrown', () {
+      expect(
+        () => CacheControlHeader.parseStrict(['public, invalid-directive']),
+        throwsFormatException,
+      );
+    });
 
-    test(
-      'when a delta-seconds directive has a non-numeric value '
-      'then a FormatException is thrown',
-      () {
-        expect(
-          () => CacheControlHeader.parseStrict(['max-age=abc']),
-          throwsFormatException,
-        );
-      },
-    );
+    test('when a delta-seconds directive has a non-numeric value '
+        'then a FormatException is thrown', () {
+      expect(
+        () => CacheControlHeader.parseStrict(['max-age=abc']),
+        throwsFormatException,
+      );
+    });
 
-    test(
-      'when a delta-seconds directive has a negative value '
-      'then a FormatException is thrown',
-      () {
-        expect(
-          () => CacheControlHeader.parseStrict(['max-age=-1']),
-          throwsFormatException,
-        );
-      },
-    );
+    test('when a delta-seconds directive has a negative value '
+        'then a FormatException is thrown', () {
+      expect(
+        () => CacheControlHeader.parseStrict(['max-age=-1']),
+        throwsFormatException,
+      );
+    });
 
-    test(
-      'when a delta-seconds directive is missing its value '
-      'then a FormatException is thrown',
-      () {
-        expect(
-          () => CacheControlHeader.parseStrict(['max-age']),
-          throwsFormatException,
-        );
-      },
-    );
+    test('when a delta-seconds directive is missing its value '
+        'then a FormatException is thrown', () {
+      expect(
+        () => CacheControlHeader.parseStrict(['max-age']),
+        throwsFormatException,
+      );
+    });
 
-    test(
-      'when an empty value is passed then a FormatException is thrown',
-      () {
-        expect(
-          () => CacheControlHeader.parseStrict(['']),
-          throwsFormatException,
-        );
-      },
-    );
+    test('when an empty value is passed then a FormatException is thrown', () {
+      expect(() => CacheControlHeader.parseStrict(['']), throwsFormatException);
+    });
   });
 }

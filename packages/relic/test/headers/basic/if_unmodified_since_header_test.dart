@@ -140,7 +140,7 @@ void main() {
           headers: {'if-unmodified-since': ''},
         );
 
-        expect(Headers.ifUnmodifiedSince[headers].valueOrNullIfInvalid, isNull);
+        expect(headers.tryGet(Headers.ifUnmodifiedSince), isNull);
         expect(() => headers.ifUnmodifiedSince, throwsInvalidHeader);
       });
     });
@@ -153,7 +153,7 @@ void main() {
           headers: {'if-unmodified-since': 'invalid-date-format'},
         );
 
-        expect(Headers.ifUnmodifiedSince[headers].valueOrNullIfInvalid, isNull);
+        expect(headers.tryGet(Headers.ifUnmodifiedSince), isNull);
         expect(() => headers.ifUnmodifiedSince, throwsInvalidHeader);
       });
     });

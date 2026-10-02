@@ -38,18 +38,19 @@ void main() {
         headers: Headers.build((final mh) => mh['foo'] = ['bar']),
       );
 
-      expect(message.headers, containsPair('foo', ['bar']));
-      expect(message.headers, containsPair('Foo', ['bar']));
-      expect(message.headers, containsPair('FOO', ['bar']));
+      expect(message.headers['foo'], ['bar']);
+      expect(message.headers['Foo'], ['bar']);
+      expect(message.headers['FOO'], ['bar']);
     });
 
     test('when modified then they are immutable', () {
       final message = _createMessage(
         headers: Headers.build((final mh) => mh['foo'] = ['bar']),
       );
-      expect(() => message.headers['h1'] = ['value1'], throwsUnsupportedError);
-      expect(() => message.headers['h1'] = ['value2'], throwsUnsupportedError);
-      expect(() => message.headers['h2'] = ['value2'], throwsUnsupportedError);
+      // Headers has no []= at all, so the only way to try is dynamically.
+      final dynamic headers = message.headers;
+      expect(() => headers['h1'] = ['value1'], throwsNoSuchMethodError);
+      expect(message.headers, isNot(isA<MutableHeaders>()));
     });
 
     test('when containing multiple values then they are handled correctly', () {
@@ -60,7 +61,7 @@ void main() {
         }),
       );
 
-      expect(message.headers, {
+      expect(message.headers.toMap(), {
         'a': ['A'],
         'b': ['B1', 'B2'],
       });

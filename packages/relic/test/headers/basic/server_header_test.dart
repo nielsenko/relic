@@ -104,7 +104,7 @@ void main() {
           headers: {'server': ''},
         );
 
-        expect(Headers.server[headers].valueOrNullIfInvalid, isNull);
+        expect(headers.tryGet(Headers.server), isNull);
         expect(() => headers.server, throwsInvalidHeader);
       });
     });

@@ -194,7 +194,7 @@ void main() {
           headers: {'proxy-authenticate': 'InvalidHeader'},
         );
 
-        expect(Headers.proxyAuthenticate[headers].valueOrNullIfInvalid, isNull);
+        expect(headers.tryGet(Headers.proxyAuthenticate), isNull);
         expect(() => headers.proxyAuthenticate, throwsInvalidHeader);
       },
     );

@@ -172,10 +172,7 @@ void main() {
           headers: {'access-control-expose-headers': ''},
         );
 
-        expect(
-          Headers.accessControlExposeHeaders[headers].valueOrNullIfInvalid,
-          isNull,
-        );
+        expect(headers.tryGet(Headers.accessControlExposeHeaders), isNull);
         expect(() => headers.accessControlExposeHeaders, throwsInvalidHeader);
       });
     });

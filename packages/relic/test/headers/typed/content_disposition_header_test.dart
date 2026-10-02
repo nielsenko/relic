@@ -149,10 +149,7 @@ void main() {
           headers: {'content-disposition': ''},
         );
 
-        expect(
-          Headers.contentDisposition[headers].valueOrNullIfInvalid,
-          isNull,
-        );
+        expect(headers.tryGet(Headers.contentDisposition), isNull);
         expect(() => headers.contentDisposition, throwsInvalidHeader);
       });
     });

@@ -13,6 +13,12 @@ import 'conformance.dart';
 final _throwsWscClosed = throwsA(isA<WebSocketConnectionClosed>());
 
 void webSocketTests(final AdapterConformance conformance) {
+  group('Given WebSocket support', () {
+    _webSocketTests(conformance);
+  }, skip: conformance.skipWebSocket);
+}
+
+void _webSocketTests(final AdapterConformance conformance) {
   RelicServer? server;
   int serverPort() => server!.url.port;
 

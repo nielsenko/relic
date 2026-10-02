@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:async/async.dart';
+
 import '../accessor/accessor.dart';
 import '../body/body.dart';
 import '../headers/headers.dart';
@@ -296,7 +298,7 @@ final class FileFieldEntry implements FormEntry {
 /// [FormFields] reports as [InvalidFormFieldException]. An [Error] propagates
 /// unchanged. Catch the [ArgumentError] from a decoder such as
 /// `Enum.values.byName` and throw a [FormatException] instead.
-class FormField<T extends Object> extends ReadOnlyAccessor<T, String, String> {
+class FormField<T extends Object> extends FunctionAccessor<T, String, String> {
   const FormField(super.key, super.decode);
 }
 
@@ -394,7 +396,7 @@ String _identity(final String value) => value;
 /// final avatar = form.files.get(avatarFile);
 /// ```
 final class FormFile
-    extends ReadOnlyAccessor<UploadedFile, String, UploadedFile> {
+    extends FunctionAccessor<UploadedFile, String, UploadedFile> {
   const FormFile(final String key) : super(key, _identityFile);
 }
 
@@ -486,15 +488,11 @@ final class MemoryUploadStorage implements UploadStorage {
     required final Headers headers,
     required final Stream<Uint8List> content,
   }) async {
-    final builder = BytesBuilder(copy: false);
-    await for (final chunk in content) {
-      builder.add(chunk);
-    }
     return MemoryUploadedFile(
       filename: filename,
       bodyType: bodyType,
       headers: headers,
-      bytes: builder.takeBytes(),
+      bytes: await collectBytes(content),
       copy: false,
     );
   }

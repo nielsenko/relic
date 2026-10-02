@@ -137,10 +137,7 @@ void main() {
           headers: {'content-security-policy': ''},
         );
 
-        expect(
-          Headers.contentSecurityPolicy[headers].valueOrNullIfInvalid,
-          isNull,
-        );
+        expect(headers.tryGet(Headers.contentSecurityPolicy), isNull);
         expect(() => headers.contentSecurityPolicy, throwsInvalidHeader);
       });
     });
