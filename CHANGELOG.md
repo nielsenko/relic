@@ -1,3 +1,48 @@
+## Unreleased
+- fix: A response head carries `Connection: close` when the connection closes after the response and the handler set no `Connection` header (RFC 9112 9.6)
+- feat: `holdHttpDate` and `releaseHttpDate` keep `httpDate` at one value while an adapter answers a batch of requests, so the responses in between read no clock
+- feat: `Body.consume` marks a body as read without creating the stream `read` returns, for an adapter that sends the bytes itself
+- fix: Frame responses and type request bodies in the core
+  - `ResponseFraming.of` decides the Content-Type, Content-Length or Transfer-Encoding, Date, body and close-after of a response once, for every adapter. The body's length wins over a handler-set Content-Length, a 304 with a streamed body sends no body, and an HTTP/1.0 client gets no chunked coding
+  - `Body.ofRequest` types a request body from its Content-Type. A request without a body is empty: `isEmpty` is true and `contentLength` is 0 where they were false and null, and an explicit `Content-Length: 0` reads as 0
+  - `Request.cancelled` works on every adapter, the request takes its scheme from the adapter, `Request.connectionInfo` is built on first read, and `httpDate` is the one Date clock
+  - `RelicWebSocket.closeGoingAway` is part of the interface and the server sends 1001 to every socket on shutdown. relic_io's `writeHttpResponse` takes the request's method, protocol and keep-alive, with `applyFraming` in place of `applyHeaders`
+- feat!: Replace the request stream with an exchange-based `Adapter`
+  - BREAKING: An `Adapter` now provides `listeners`, `capabilities` and `start(sink)` instead of `port` and `requests`, and wraps each request in an `AdapterExchange` that carries `respond`, `hijack`, `upgradeWebSocket` and `abort`. `AdapterRequest` is gone. `Adapter.port` is deprecated in favour of `listeners`
+  - BREAKING: `HijackCallback` receives a `StreamChannel<Uint8List>`
+  - BREAKING: `Request.protocolVersion` is now `Request.protocol`, an `HttpProtocol`
+  - `RelicServer` resolves its adapter once and dispatches a sync handler without a single `await`. Errors that handlers let through map to a status in one place, and an error response that itself fails aborts the exchange
+  - The `Date` header is added by the adapter when a response has none, instead of by copying the headers of every response
+  - The adapter conformance suite in `test_utils/adapter_conformance.dart` runs the server, shutdown, connections, header wire form, hijack and WebSocket tests against any adapter
+- feat!: Rebase `Headers` on `HeaderStore` and add the `relic_headers` package
+  - BREAKING: `Headers` is no longer a `Map`. Read raw values with `headers[name]` or `headers.toMap()`, typed values with `headers(accessor)`, `headers.get(accessor)` or `headers.tryGet(accessor)`, the way path, query and form parameters are read. The named getters such as `headers.contentLength` are unchanged
+  - BREAKING: `MutableHeaders` writes typed values with `assign(accessor, value)`. The `Headers.x[headers]` indexing form and the `Header` extension type are removed
+  - BREAKING: `HeaderAccessor` takes a `HeaderName`. A custom accessor uses `HeaderName.custom('x-name')`
+  - BREAKING: The `Request` constructor no longer decodes the path and query. An adapter validates the target and answers 400. `Request.target` exposes the path and query as a `RequestTarget`
+  - New package `relic_headers` with `HeaderName`, `HeaderStore`, `MutableHeaderStore` and `MapHeaderStore`, for packages that read or produce headers without the rest of Relic. relic_core re-exports it
+  - `ByteHeaderStore` reads a request head lazily. `HeaderCodec.single` takes a `decodeBytes` decoder, and `Content-Length` is decoded from bytes on such a store
+  - `Body.bytes` and `Body.readAll()`. The dart:io adapter writes a buffered body in one call
+- feat: Add the `relic_native` package, a Relic adapter on a Zig HTTP server
+  - `NativeAdapter.bind`, `NativeExchange` and `RelicApp.serveNative`. HTTP/1.0 and HTTP/1.1, keep-alive, and several isolates sharing one server. Linux and macOS, prebuilt in the published package
+  - Chunked and large request bodies stream to the handler as they arrive, and a response body without bytes streams out, chunked when it has no `Content-Length`. `maxInlineBody` sets the inline limit
+  - `idleTimeout`, `headerTimeout`, `bodyTimeout`, `writeTimeout` and `maxConnections` on `NativeAdapter.bind`. A slow head gets 408, a slow body 408, and a connection over the cap waits in the backlog
+  - `Request.cancelled` completes when the peer hangs up while the handler runs
+  - A head with bare LF line endings, a field line without a colon or a folded line is answered 400. The std.http parser accepts them and its header iterator crashes on some, which fuzzing found
+  - `NativeExchange.hijack` hands the connection over as a raw `StreamChannel<Uint8List>`, and WebSocket upgrades run on it with the framer below
+  - The reactor runs on the isolate's own thread, ticked from the event loop, so a request costs no cross-thread wake. `NativeAdapter.bind` and `serveNative` take no `executors`, and `queueCapacity` is `reactorCapacity`
+- feat: WebSocket framing in relic_core, for an adapter that can hijack a connection but has no framer of its own
+  - `FramedWebSocket` is a `RelicWebSocket` over any `StreamChannel<Uint8List>`. `WebSocketFrameDecoder`, `WebSocketMessageAssembler` and `encodeWebSocketFrame` are the RFC 6455 pieces, `webSocketAcceptKey` and `webSocketHandshakeResponse` the opening handshake
+  - `RelicServer` picks the adapter's own upgrade when `capabilities.webSocket` is set, frames over `hijack` otherwise, and answers 501 when it can do neither. Body gained `isRead`
+  - `Body.fromBytes` builds a body from bytes with the declared media type and infers nothing
+- perf: `ContextProperty` keeps its values in a slot list on the `Request` instead of an `Expando`. Two property writes per request were 15% of a hello route's isolate time
+- perf: `routeWith` and `respondWith` pass a synchronous response through without a Future, so a sync route reaches the adapter with no microtask hop
+- perf: `BodyType` builds its `Content-Type` value once and skips parameter normalization for an empty map
+- fix: `FramedWebSocket` closes the channel at once when a peer leaves a ping unanswered, instead of waiting out the close handshake timeout
+- perf: `RelicApp` builds its routing pipeline once per mount rather than per request, and the routing middleware decides its handler type check once
+- perf: A `Body` built from bytes or a string makes its stream only when read, so an adapter that writes the bytes allocates no stream controller
+- perf: Bodies share one immutable `BodyType` per MIME type and encoding pair, so the `Content-Type` value is built once per pair
+- perf: A `Request` can be created from a `RequestTarget` and an authority, with `url` built on first read, and the routing middleware routes on the target's segments. A `RequestTarget` from bytes splits an escape-free path without a `Uri` and keeps dot segments for the router. `NormalizedPath.fromPathSegments` takes segments that are already split
+
 ## 2.0.0-rc.2
 - feat!: Add HTML form and multipart parsing ([#380](https://github.com/serverpod/relic/pull/380)) - closes [#379](https://github.com/serverpod/relic/issues/379)
   - BREAKING: The minimum Dart SDK is 3.10.0. The Dart 3.9.0 compiler crashes in the FFI transform ([dart-lang/sdk#61321](https://github.com/dart-lang/sdk/issues/61321))
@@ -153,9 +198,9 @@ Relic is now considered stable and production-ready! 🎉
 ## 0.9.0
 - refactor!: Context renaming ([#251](https://github.com/serverpod/relic/pull/251))
   Renames core context types for improved clarity and consistency:
-  - `NewContext` → `RequestContext`
-  - `ConnectContext` → `ConnectionContext`
-  - `HijackContext` → `HijackedContext`
+  - `NewContext` -> `RequestContext`
+  - `ConnectContext` -> `ConnectionContext`
+  - `HijackContext` -> `HijackedContext`
   - Base class `RequestContext` renamed to `Context`
 - chore!: Upgrade sdk to ^3.7.0 ([#239](https://github.com/serverpod/relic/pull/239))
 - feat: Introduce MultiIsolateRelicServer ([#216](https://github.com/serverpod/relic/pull/216))
