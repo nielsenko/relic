@@ -46,6 +46,12 @@ abstract interface class RelicWebSocket implements WebSocket {
   /// Throws an [ArgumentError] if [reason] is longer than 123 bytes when
   /// encoded as UTF-8
   Future<bool> tryClose([final int? code, final String? reason]);
+
+  /// Tells the peer the server is going away (RFC 6455 1001) and waits,
+  /// within a bound, for the connection to end. For the server on
+  /// shutdown. Nothing happens on a socket that is closed, and nothing
+  /// here throws.
+  Future<void> closeGoingAway();
 }
 
 /// A callback function invoked when a [socket] connection is established.

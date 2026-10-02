@@ -271,7 +271,7 @@ Request _multipartRequest({
   return RequestInternal.create(
     Method.post,
     Uri.parse('http://localhost/form'),
-    Object(),
+    null,
     body: Body.fromData(
       Uint8List.fromList(utf8.encode(body)),
       mimeType: MimeType.multipartFormData,

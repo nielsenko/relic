@@ -5,10 +5,10 @@ import 'package:crypto/crypto.dart';
 import 'package:relic_headers/relic_headers.dart';
 
 import '../context/result.dart';
-import '../headers/codecs/common_types_codecs.dart';
 import '../headers/exception/header_exception.dart';
 import '../headers/standard_headers_extensions.dart';
 import '../router/method.dart';
+import '../util/http_date.dart';
 
 /// RFC 6455 1.3, the string the accept key is derived with.
 const _guid = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
@@ -56,7 +56,7 @@ Uint8List webSocketHandshakeResponse(final String acceptKey) =>
         'Upgrade: websocket\r\n'
         'Connection: Upgrade\r\n'
         'Sec-WebSocket-Accept: $acceptKey\r\n'
-        'Date: ${encodeDate(DateTime.now().toUtc()).first}\r\n'
+        'Date: ${httpDate()}\r\n'
         '\r\n',
       ),
     );

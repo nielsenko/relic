@@ -24,7 +24,7 @@ Request _fromPath(
 }) => RequestInternal.create(
   method,
   Uri.parse('http://localhost$path'),
-  Object(),
+  null,
   headers: headers,
 );
 

@@ -129,9 +129,9 @@ final class FramedWebSocket implements RelicWebSocket {
     return true;
   }
 
-  /// Tells the peer the server is going away (RFC 6455 1001) and waits for
-  /// its close frame, [closeTimeout] at most. Nothing happens on a socket
-  /// that is already closed, and nothing here throws.
+  /// Waits for the peer's close frame, [closeTimeout] at most, then for
+  /// the channel to flush, as long again.
+  @override
   Future<void> closeGoingAway() {
     if (!isClosed) {
       _closeEvents();

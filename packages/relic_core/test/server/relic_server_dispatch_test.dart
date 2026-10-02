@@ -61,7 +61,7 @@ final class _FakeExchange implements AdapterExchange {
   @override
   Request toRequest() {
     if (toRequestThrows) throw const FormatException('bad target');
-    return RequestInternal.create(Method.get, url, Object(), headers: headers);
+    return RequestInternal.create(Method.get, url, this, headers: headers);
   }
 
   @override
@@ -103,8 +103,13 @@ final class _FakeExchange implements AdapterExchange {
     _finish(ExchangeEnd.aborted);
   }
 
+  final _cancelled = Completer<void>();
+
+  /// The peer hangs up.
+  void cancel() => _cancelled.complete();
+
   @override
-  Future<void> get cancelled => Completer<void>().future;
+  Future<void> get cancelled => _cancelled.future;
 
   @override
   Future<ExchangeEnd> get done => _done.future;
@@ -387,5 +392,24 @@ void main() {
 
     expect(adapter.sink, same(firstSink));
     expect(exchange.responses.single.statusCode, 200);
+  });
+
+  test('Given a handler that reads cancelled, '
+      'when the exchange reports the peer gone, '
+      'then the request\'s cancelled completes', () async {
+    Future<void>? cancelled;
+    final (_, adapter) = await _serve((final req) {
+      cancelled = req.cancelled;
+      return _ok();
+    });
+    final exchange = _FakeExchange();
+    await _push(adapter, exchange);
+
+    exchange.cancel();
+
+    await expectLater(
+      cancelled!.timeout(const Duration(seconds: 1)),
+      completes,
+    );
   });
 }

@@ -68,10 +68,9 @@ final class _RelicServer implements RelicServer {
   Handler? _handler;
   bool _started = false;
 
-  /// WebSockets this server frames itself, over hijacked connections.
-  /// The adapter knows them as raw channels, so the going-away close on
-  /// shutdown is this server's job.
-  final _framedSockets = <FramedWebSocket>{};
+  /// The WebSockets handed to handlers, framed here or by the adapter.
+  /// The going-away close on shutdown is this server's job for all of them.
+  final _sockets = <RelicWebSocket>{};
 
   /// Creates a server with the given parameters.
   _RelicServer(final Factory<Adapter> adapterFactory)
@@ -106,7 +105,8 @@ final class _RelicServer implements RelicServer {
     _handler = null;
     final adapter = _adapter ?? await _pendingAdapter;
     final goingAway = [
-      for (final socket in _framedSockets.toList()) socket.closeGoingAway(),
+      for (final socket in _sockets.toList())
+        if (!socket.isClosed) socket.closeGoingAway(),
     ];
     // The close frames are written before the adapter drops the channels.
     // A graceful close waits for the peers' answers too.
@@ -217,9 +217,9 @@ final class _RelicServer implements RelicServer {
         if (capabilities.webSocket) {
           final socket = exchange.upgradeWebSocket();
           if (socket is Future<RelicWebSocket>) {
-            return socket.then(upgrade.callback);
+            return socket.then((final socket) => _handOver(socket, upgrade));
           }
-          upgrade.callback(socket);
+          _handOver(socket, upgrade);
           return null;
         }
         if (!capabilities.hijack) {
@@ -262,8 +262,17 @@ final class _RelicServer implements RelicServer {
   ) {
     channel.sink.add(webSocketHandshakeResponse(acceptKey));
     final socket = FramedWebSocket(channel);
-    _framedSockets.add(socket);
-    unawaited(socket.done.whenComplete(() => _framedSockets.remove(socket)));
+    unawaited(socket.done.whenComplete(() => _sockets.remove(socket)));
+    _handOver(socket, upgrade);
+  }
+
+  /// Keeps [socket] for the going-away close and gives it to the handler.
+  /// Sockets that closed on their own are let go of here, since not every
+  /// adapter's socket says when it is done.
+  void _handOver(final RelicWebSocket socket, final WebSocketUpgrade upgrade) {
+    _sockets
+      ..removeWhere((final s) => s.isClosed)
+      ..add(socket);
     upgrade.callback(socket);
   }
 

@@ -61,6 +61,9 @@ class BodyType {
   ///
   /// Throws [FormatException] if one does not.
   void validate() {
+    // The header value is built from the same checks and kept, so a type
+    // that has one has passed them.
+    if (_headerValue != null) return;
     mimeType.validate();
     for (final MapEntry(:key, :value) in parameters.entries) {
       Token.validate(key);

@@ -6,7 +6,7 @@ Request _request(
   final String path, {
   final String host = 'localhost',
   final Method method = Method.get,
-}) => RequestInternal.create(method, Uri.http(host, path), Object());
+}) => RequestInternal.create(method, Uri.http(host, path), null);
 
 void main() {
   test('Given a route whose handler answers synchronously, '
@@ -836,7 +836,7 @@ void main() {
       final request = RequestInternal.create(
         Method.get,
         Uri.parse('http://public.example.com$rawPath'),
-        Object(),
+        null,
       );
       final result = await handlerFor(vhostRouter())(request);
       return (result as Response).statusCode;
@@ -883,7 +883,7 @@ void main() {
       final request = RequestInternal.create(
         Method.get,
         Uri.parse('http://localhost$rawPath'),
-        Object(),
+        null,
       );
       final result = await handlerFor(aclRouter())(request) as Response;
       if (result.statusCode != 200) return 'none';

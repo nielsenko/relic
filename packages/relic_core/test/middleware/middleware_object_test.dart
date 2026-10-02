@@ -14,7 +14,7 @@ void main() {
       final request = RequestInternal.create(
         Method.get,
         Uri.parse('http://localhost/test'),
-        Object(),
+        null,
       );
       final req = request;
       final result = await router.asHandler(req) as Response;
@@ -39,7 +39,7 @@ void main() {
       final request = RequestInternal.create(
         Method.get,
         Uri.parse('http://localhost/test'),
-        Object(),
+        null,
       );
       final req = request;
       final result = await router.asHandler(req) as Response;
@@ -64,7 +64,7 @@ void main() {
       final request = RequestInternal.create(
         Method.get,
         Uri.parse('http://localhost/test'),
-        Object(),
+        null,
       );
       final req = request;
       await router.asHandler(req);
@@ -88,7 +88,7 @@ void main() {
       final request = RequestInternal.create(
         Method.get,
         Uri.parse('http://localhost/test'),
-        Object(),
+        null,
       );
       final req = request;
       final result = await router.asHandler(req) as Response;

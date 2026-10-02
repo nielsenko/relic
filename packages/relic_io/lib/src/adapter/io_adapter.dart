@@ -23,8 +23,8 @@ class IOAdapter implements Adapter {
   ///
   /// Hijacking and upgrading both take the connection out of the underlying
   /// server's bookkeeping, so from that point on nothing else knows they
-  /// exist. They are tracked here so shutdown can close them and
-  /// [connectionsInfo] can report them.
+  /// exist. They are tracked here so shutdown can close the hijacked ones
+  /// and [connectionsInfo] can report both kinds.
   final _hijackedSockets = <io.Socket>{};
   final _webSockets = <IORelicWebSocket>{};
 
@@ -117,33 +117,26 @@ class IOAdapter implements Adapter {
     _destroyDetached();
   }
 
-  /// Asks every detached connection to close, telling WebSocket peers that
-  /// the server is going away (RFC 6455 1001).
+  /// Asks every hijacked connection to close. The WebSockets got their
+  /// going-away close from the server before this.
   ///
-  /// The tracking sets are deliberately left alone: a hijacked socket removes
+  /// The tracking set is deliberately left alone: a hijacked socket removes
   /// itself when it completes, so whatever is still tracked when the drain
   /// deadline passes is exactly what [_destroyDetached] must drop.
   Future<void> _closeDetached() async {
     await Future.wait([
-      for (final ws in _webSockets.toList()) ws.closeGoingAway(),
       for (final socket in _hijackedSockets.toList()) socket.close(),
     ], eagerError: false).catchError((final _) => const <Object?>[]);
   }
 
-  /// Drops whatever is left without waiting for the peer.
-  ///
-  /// Hijacked sockets are destroyed outright. WebSockets get a fire-and-forget
-  /// [IORelicWebSocket.closeGoingAway] instead: `dart:io` exposes no hard
-  /// teardown for an upgraded socket, but bounds internally how long a peer
-  /// can stall the close handshake.
+  /// Drops whatever is left without waiting for the peer. `dart:io`
+  /// exposes no hard teardown for an upgraded socket, and bounds the close
+  /// handshake the server started itself.
   void _destroyDetached() {
     for (final socket in _hijackedSockets.toList()) {
       socket.destroy();
     }
     _hijackedSockets.clear();
-    for (final ws in _webSockets.toList()) {
-      unawaited(ws.closeGoingAway());
-    }
     _webSockets.clear();
   }
 
@@ -201,12 +194,17 @@ final class IOExchange implements AdapterExchange {
   HttpProtocol get protocol => httpProtocolOf(_request);
 
   @override
-  Request toRequest() => fromHttpRequest(_request);
+  Request toRequest() => fromHttpRequest(_request, this);
 
   @override
   Future<void> respond(final Response response) async {
     try {
-      await response.writeHttpResponse(_request.response);
+      await response.writeHttpResponse(
+        _request.response,
+        method: Method.parse(_request.method),
+        protocol: httpProtocolOf(_request),
+        keepAlive: _request.persistentConnection,
+      );
       _finish(ExchangeEnd.completed);
     } catch (_) {
       _finish(ExchangeEnd.aborted);

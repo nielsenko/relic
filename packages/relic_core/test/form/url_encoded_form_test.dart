@@ -172,7 +172,7 @@ void main() {
     final request = RequestInternal.create(
       Method.post,
       Uri.parse('http://localhost/form'),
-      Object(),
+      null,
       body: Body.fromDataStream(
         Stream.value(Uint8List.fromList(utf8.encode('name=Gustavo'))),
         mimeType: MimeType.urlEncoded,
@@ -241,7 +241,7 @@ void main() {
       final request = RequestInternal.create(
         Method.post,
         Uri.parse('http://localhost/form'),
-        Object(),
+        null,
         body: Body.fromDataStream(
           Stream.error(upstream),
           mimeType: MimeType.urlEncoded,
@@ -258,7 +258,7 @@ void main() {
     final request = RequestInternal.create(
       Method.post,
       Uri.parse('http://localhost/form'),
-      Object(),
+      null,
       body: Body.fromString('name=Gustavo', mimeType: MimeType.urlEncoded),
     );
 
@@ -284,7 +284,7 @@ Request _request({
   return RequestInternal.create(
     Method.post,
     Uri.parse('http://localhost/form'),
-    Object(),
+    null,
     body: _bodyFromContentType(
       bodyBytes ?? Uint8List.fromList(utf8.encode(body ?? '')),
       contentType ?? ContentTypeHeader(mimeType: MimeType.urlEncoded),

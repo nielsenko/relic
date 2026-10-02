@@ -197,7 +197,8 @@ void serveTests(final AdapterConformance conformance) {
       expect(req.mimeType, isNull);
       expect(req.encoding, isNull);
       expect(req.method, Method.post);
-      expect(req.body.contentLength, isNull);
+      expect(req.body.contentLength, 0);
+      expect(req.isEmpty, isTrue);
 
       final body = await req.readAsString();
       expect(body, '');
@@ -371,6 +372,48 @@ void serveTests(final AdapterConformance conformance) {
     }
 
     expect(await utf8.decodeStream(socket), contains('400 Bad Request'));
+  });
+
+  test(
+    'Given an absolute-form request target, when the request is made, '
+    'then the handler sees the path and the authority of the target',
+    () async {
+      await scheduleServer(
+        (final req) => Response.ok(body: Body.fromString('${req.url}')),
+      );
+      final socket = await Socket.connect('localhost', serverPort());
+
+      try {
+        // RFC 9112 3.2.2: a server accepts the absolute form, and its
+        // authority wins over the Host header.
+        socket.write('GET http://proxied.example:8080/x?y=1 HTTP/1.1\r\n');
+        socket.write('Host: localhost\r\n');
+        socket.write('\r\n');
+      } finally {
+        await socket.close();
+      }
+
+      final reply = await utf8.decodeStream(socket);
+      expect(reply, startsWith('HTTP/1.1 200'));
+      expect(reply, endsWith('http://proxied.example:8080/x?y=1'));
+    },
+  );
+
+  test('Given a response with a Connection header that does not parse, '
+      'when it is sent, then the client receives a 500', () async {
+    await scheduleServer(
+      (final req) => Response.ok(
+        headers: Headers.build((final mh) => mh['connection'] = ['close;x']),
+      ),
+    );
+
+    final response = await get();
+
+    expect(
+      response.statusCode,
+      500,
+      reason: 'the handler produced the header, not the client',
+    );
   });
 
   group('Given a response without a Date header', () {

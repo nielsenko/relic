@@ -66,35 +66,48 @@ class Request extends Message {
   Uri? _url;
   final String? _authority;
 
-  /// The native adapter speaks plain HTTP. An adapter with TLS hands over
-  /// a Uri.
-  static const _scheme = 'http';
+  /// The scheme of a URL built from a target and an authority: what the
+  /// adapter's listener speaks.
+  final String _scheme;
 
   /// Information about the IP connection carrying the request.
   ///
   /// Be aware that this only contains information about the last leg of the
   /// overall HTTP connection, typically from the nearest load balancer to the
   /// server.
-  final ConnectionInfo connectionInfo;
+  ConnectionInfo get connectionInfo =>
+      _connectionInfo ??= _lazyConnectionInfo?.call() ?? ConnectionInfo.empty;
+
+  ConnectionInfo? _connectionInfo;
+
+  /// Builds [connectionInfo] on first read, for an adapter that would
+  /// otherwise build one per request that nothing reads.
+  final ConnectionInfo Function()? _lazyConnectionInfo;
 
   /// Creates a new [Request].
-  /// Takes [url], or [target] with [authority] for a url built on demand.
+  /// Takes [url], or [target] with [authority] and [scheme] for a url
+  /// built on demand. [exchange] is what the request came in on, when an
+  /// adapter has one.
   Request._(
     this.method,
     final Uri? url,
-    this._token, {
+    this._exchange, {
     final Headers? headers,
     final HttpProtocol? protocol,
     final Body? body,
     final ConnectionInfo? connectionInfo,
+    final ConnectionInfo Function()? lazyConnectionInfo,
     final List<Object?>? properties,
     final RequestTarget? target,
     final String? authority,
+    final String scheme = 'http',
   }) : _url = url,
        _target = target,
        _authority = authority,
+       _scheme = scheme,
        protocol = protocol ?? HttpProtocol.http11,
-       connectionInfo = connectionInfo ?? ConnectionInfo.empty,
+       _connectionInfo = connectionInfo,
+       _lazyConnectionInfo = lazyConnectionInfo,
        _properties = properties ?? <Object?>[],
        super(body: body ?? Body.empty(), headers: headers ?? Headers.empty()) {
     if (url == null) {
@@ -125,10 +138,7 @@ class Request extends Message {
   /// A long-running handler can stop work it no longer has a reader for.
   /// Whether an adapter can tell depends on the adapter: the dart:io one
   /// only sees a peer that left once something was written.
-  Future<void> get cancelled => switch (_token) {
-    final AdapterExchange exchange => exchange.cancelled,
-    _ => _never,
-  };
+  Future<void> get cancelled => _exchange?.cancelled ?? _never;
 
   static final _never = Completer<void>().future;
 
@@ -147,18 +157,22 @@ class Request extends Message {
     return Request._(
       method,
       url ?? _url,
-      token,
+      _exchange,
       headers: headers ?? this.headers,
       protocol: protocol,
       body: body ?? this.body,
-      connectionInfo: connectionInfo,
+      connectionInfo: _connectionInfo,
+      lazyConnectionInfo: _lazyConnectionInfo,
       properties: _properties,
       target: url == null ? _target : null,
       authority: _authority,
+      scheme: _scheme,
     );
   }
 
-  final Object _token;
+  /// The exchange the request came in on, or null for one built without
+  /// an adapter.
+  final AdapterExchange? _exchange;
 
   /// What [ContextProperty] stores for this request, one slot per property.
   /// A copy made with [copyWith] shares the list, so a value set on either
@@ -172,8 +186,8 @@ extension RequestInternal on Request {
   /// Expose private constructor internally
   static const create = Request._;
 
-  /// Expose token internally
-  Object get token => _token;
+  /// The exchange the request came in on, when an adapter made it.
+  AdapterExchange? get exchange => _exchange;
 
   /// The [ContextProperty] slots, indexed by the property.
   List<Object?> get properties => _properties;

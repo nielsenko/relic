@@ -45,11 +45,7 @@ Future<Response> makeSimpleRequest(
   return newCtx;
 }
 
-final _defaultRequest = RequestInternal.create(
-  Method.get,
-  localhostUri,
-  Object(),
-);
+final _defaultRequest = RequestInternal.create(Method.get, localhostUri, null);
 
 final localhostUri = Uri.parse('http://localhost/');
 

@@ -21,7 +21,10 @@ import 'package:test/test.dart';
 
 import 'src/conformance/conformance.dart';
 import 'src/conformance/connections_tests.dart';
+import 'src/conformance/framing_tests.dart';
+import 'src/conformance/header_wire_tests.dart';
 import 'src/conformance/hijack_tests.dart';
+import 'src/conformance/request_body_tests.dart';
 import 'src/conformance/response_failure_tests.dart';
 import 'src/conformance/serve_tests.dart';
 import 'src/conformance/server_tests.dart';
@@ -48,6 +51,9 @@ void adapterConformance(
   group(name, () {
     serverTests(conformance);
     serveTests(conformance);
+    framingTests(conformance);
+    headerWireTests(conformance);
+    requestBodyTests(conformance);
     shutdownTests(conformance);
     connectionsTests(conformance);
     responseFailureTests(conformance);
