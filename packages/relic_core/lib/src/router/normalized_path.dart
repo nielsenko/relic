@@ -1,3 +1,4 @@
+import '../adapter/request_target.dart';
 import 'package:meta/meta.dart';
 
 /// Represents a URL path that has been normalized.
@@ -45,9 +46,13 @@ class NormalizedPath {
   ///
   /// [Uri.pathSegments] splits on the separator before decoding, so an encoded
   /// separator (`%2F`) stays within its segment.
-  factory NormalizedPath.fromUri(final Uri url) {
-    final segments = url.pathSegments;
-    // Reuse the unmodifiable pathSegments if clean
+  factory NormalizedPath.fromUri(final Uri url) =>
+      NormalizedPath.fromPathSegments(url.pathSegments);
+
+  /// From segments split and decoded the way [Uri.pathSegments] does it,
+  /// such as [RequestTarget.pathSegments]. The unmodifiable list is reused
+  /// as is when it is already normalized.
+  factory NormalizedPath.fromPathSegments(final List<String> segments) {
     for (final segment in segments) {
       if (segment.isEmpty || segment == '.' || segment == '..') {
         return NormalizedPath._(_normalizeSegments(segments));

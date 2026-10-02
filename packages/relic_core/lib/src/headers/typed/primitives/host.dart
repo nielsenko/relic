@@ -135,6 +135,41 @@ final class Host {
 
   @override
   String toString() => encode();
+
+  /// Throws [FormatException] unless [authority] is `uri-host [":" port]`
+  /// as [Uri.parse] accepts it. A name with at most a numeric port after
+  /// one colon passes a character scan. An IP literal, a second colon or a
+  /// port that is not a number goes through [parse], which rejects a bare
+  /// IPv6 address and an unmatched bracket.
+  static void checkAuthority(final String authority) {
+    var colonAt = -1;
+    var parse = false;
+    for (var i = 0; i < authority.length; i++) {
+      final c = authority.codeUnitAt(i);
+      if (c >= 0x80 || !_authorityChars[c]) {
+        throw FormatException('Not a valid authority', authority);
+      }
+      if (c == 0x3a) {
+        if (colonAt >= 0) parse = true;
+        colonAt = i;
+      } else if (c == 0x5b || c == 0x5d) {
+        parse = true;
+      } else if (colonAt >= 0 && (c < 0x30 || c > 0x39)) {
+        parse = true;
+      }
+    }
+    if (parse) Host.parse(authority);
+  }
+
+  /// RFC 3986 unreserved and sub-delims, plus `:` for the port, `%` for an
+  /// escape and the brackets of an IPv6 literal.
+  static final _authorityChars = List<bool>.generate(128, (final c) {
+    const extra = r"-._~!$&'()*+,;=:%[]";
+    return (c >= 0x30 && c <= 0x39) ||
+        (c >= 0x41 && c <= 0x5a) ||
+        (c >= 0x61 && c <= 0x7a) ||
+        extra.codeUnits.contains(c);
+  });
 }
 
 /// Validates the contents of an `IP-literal` (the text inside `[...]`).

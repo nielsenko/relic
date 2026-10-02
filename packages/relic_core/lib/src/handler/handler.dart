@@ -73,11 +73,7 @@ typedef Responder = FutureOr<Response> Function(Request);
 ///   ),
 /// );
 /// ```
-Handler respondWith(final Responder responder) {
-  return (final req) async {
-    return await responder(req);
-  };
-}
+Handler respondWith(final Responder responder) => responder;
 
 /// An abstract base class for classes that behave like [Handler]s.
 ///

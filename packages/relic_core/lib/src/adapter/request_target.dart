@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import '../router/normalized_path.dart';
+
 /// The path and query of a request, as received.
 ///
 /// Bytes first, text on demand. An adapter that parses the request line
@@ -17,6 +19,8 @@ final class RequestTarget {
   Uint8List? _pathBytes;
   Uint8List? _queryBytes;
   bool _queryBytesKnown;
+  String? _path;
+  String? _query;
   List<String>? _pathSegments;
   Map<String, List<String>>? _queryParametersAll;
 
@@ -52,36 +56,53 @@ final class RequestTarget {
     return _queryBytes;
   }
 
-  Uri get _parsed => _uri ??= Uri(
-    path: String.fromCharCodes(_pathBytes!),
-    query: _queryBytes == null ? null : String.fromCharCodes(_queryBytes!),
-  );
-
-  /// The percent-encoded path text.
-  String get path => _parsed.path;
+  /// The percent-encoded path text: as received from bytes, dot segments
+  /// included, or as [Uri.path] normalized it from a Uri.
+  String get path => _path ??= _uri?.path ?? String.fromCharCodes(_pathBytes!);
 
   /// The raw query text without `?`, empty when there is none.
-  String get query => _parsed.query;
+  String get query => _query ??=
+      _uri?.query ??
+      (_queryBytes == null ? '' : String.fromCharCodes(_queryBytes!));
+
+  bool get _hasQuery => _uri?.hasQuery ?? _queryBytes != null;
 
   /// The decoded path segments. Throws [FormatException] for a segment that
   /// does not decode.
-  List<String> get pathSegments => _pathSegments ??= _parsed.pathSegments;
+  List<String> get pathSegments =>
+      _pathSegments ??= _uri?.pathSegments ?? _splitPath(path);
+
+  /// Split as [Uri.pathSegments] splits: a leading `/` dropped, no segment
+  /// for what is then empty, the rest split on `/`. A path with an escape
+  /// or a backslash, which [Uri] takes as a separator, goes through [Uri]
+  /// so both origins decode alike, and [Uri] removes dot segments. A path
+  /// split here keeps them, for the router's [NormalizedPath] to remove.
+  static List<String> _splitPath(final String path) {
+    if (path.contains('%') || path.contains(r'\')) {
+      return Uri(path: path).pathSegments;
+    }
+    final from = path.isNotEmpty && path.codeUnitAt(0) == 0x2f ? 1 : 0;
+    if (from == path.length) return const [];
+    return List.unmodifiable(path.substring(from).split('/'));
+  }
 
   /// The decoded query parameters. Throws [FormatException] for a parameter
   /// that does not decode.
-  Map<String, List<String>> get queryParametersAll =>
-      _queryParametersAll ??= _parsed.queryParametersAll;
+  Map<String, List<String>> get queryParametersAll => _queryParametersAll ??=
+      _uri?.queryParametersAll ??
+      (_queryBytes == null ? const {} : Uri(query: query).queryParametersAll);
 
   /// Decodes the segments and parameters now. Throws [FormatException] for
   /// a target that does not decode, so an adapter can answer 400 before a
-  /// handler runs.
+  /// handler runs. From bytes, a query without an escape is left for a
+  /// handler that asks: it cannot fail.
   void validate() {
     if (_uri == null &&
         (_hasByte(_pathBytes!, 0x23) || _hasByte(_queryBytes, 0x23))) {
       throw FormatException('A request target has no fragment', originForm);
     }
     pathSegments;
-    queryParametersAll;
+    if (_uri != null || query.contains('%')) queryParametersAll;
   }
 
   static bool _hasByte(final Uint8List? bytes, final int byte) =>
@@ -89,8 +110,7 @@ final class RequestTarget {
 
   /// The origin form: the encoded path, and the query after `?` when there
   /// is one.
-  String get originForm =>
-      _parsed.hasQuery ? '${_parsed.path}?${_parsed.query}' : _parsed.path;
+  String get originForm => _hasQuery ? '$path?$query' : path;
 
   /// An absolute URL for this target under [scheme] and [authority].
   Uri toUri({required final String scheme, required final String authority}) =>

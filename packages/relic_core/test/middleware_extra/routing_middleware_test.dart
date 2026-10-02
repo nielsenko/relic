@@ -9,6 +9,16 @@ Request _request(
 }) => RequestInternal.create(method, Uri.http(host, path), Object());
 
 void main() {
+  test('Given a route whose handler answers synchronously, '
+      'when the routing middleware is called, '
+      'then the response comes back without a Future', () {
+    final router = RelicRouter()..get('/', (final _) => Response(200));
+    final result = routeWith(router)(respondWith((_) => Response(404)))(
+      _request('/'),
+    );
+    expect(result, isA<Response>());
+  });
+
   group('RoutingMiddleware', () {
     late RelicRouter router;
     late Middleware middleware;
