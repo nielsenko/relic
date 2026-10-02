@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:stream_channel/stream_channel.dart';
 
@@ -14,81 +15,84 @@ import 'relic_web_socket.dart';
 ///
 /// Once a connection is hijacked, the server stops managing it, and the developer
 /// gains direct access to the underlying socket or data stream.
-typedef HijackCallback = void Function(StreamChannel<List<int>>);
+typedef HijackCallback = void Function(StreamChannel<Uint8List>);
 
-/// Base class for adapter-specific request objects.
+/// Installed once by [Adapter.start]. The adapter calls it for every
+/// exchange, on the isolate that called `start`.
 ///
-/// This allows an [Adapter] to encapsulate and track internal state
-/// associated with an incoming request. Adapter-specific requests
-/// can then be converted into a standard [Request] object for processing
-/// by the application.
-abstract class AdapterRequest {
-  /// Converts this adapter-specific request into a standard [Request] object.
-  ///
-  /// This allows the core application logic to work with a consistent
-  /// request model, abstracting away the details of the underlying adapter.
-  Request toRequest();
+/// A non-Future return means the exchange was fully handled in the call.
+/// The sink never throws and never returns a failed Future.
+typedef ExchangeSink = FutureOr<void> Function(AdapterExchange exchange);
+
+/// The HTTP version an exchange was received with.
+enum HttpProtocol { http10, http11, h2, h3 }
+
+/// The transport a [Listener] accepts connections on.
+enum Transport { tcp, udp, unix }
+
+/// One bound socket of an [Adapter]. An h1 plus h3 server has a TCP and a UDP
+/// listener.
+final class Listener {
+  final Transport transport;
+
+  /// The bound address as text. Not an `InternetAddress`, so relic_core stays
+  /// free of `dart:io`.
+  final String host;
+  final int port;
+  final Set<HttpProtocol> protocols;
+
+  const Listener(this.transport, this.host, this.port, this.protocols);
 }
+
+/// What an [Adapter] can do beyond a plain request and response.
+final class AdapterCapabilities {
+  /// Raw byte-stream takeover. Only meaningful for h1, since h2 and h3 have
+  /// no socket per exchange.
+  final bool hijack;
+
+  /// The adapter performs the WebSocket upgrade itself (h1 Upgrade, h2
+  /// RFC 8441, h3 RFC 9220). Otherwise the core frames over [hijack].
+  final bool webSocket;
+  final bool webTransport;
+  final bool trailers;
+
+  /// Header and target bytes live in adapter memory that dies with the
+  /// exchange. Access after [AdapterExchange.done] throws unless detached.
+  final bool lifetimeBoundViews;
+
+  /// The adapter can send a file without routing bytes through Dart.
+  final bool sendFile;
+
+  const AdapterCapabilities({
+    this.hijack = false,
+    this.webSocket = false,
+    this.webTransport = false,
+    this.trailers = false,
+    this.lifetimeBoundViews = false,
+    this.sendFile = false,
+  });
+}
+
+/// How an exchange finished.
+enum ExchangeEnd { completed, upgraded, hijacked, aborted, cancelledByPeer }
 
 /// An interface for adapters that bridge Relic to specific server implementations.
 ///
-/// Adapters are responsible for receiving incoming requests from a source
-/// (e.g., an HTTP server, a message queue), converting them into a standard
-/// [AdapterRequest] format, and then handing them off to the Relic core.
-/// They also handle sending back responses or managing hijacked connections.
-abstract class Adapter {
-  /// The port this adapter is bound to.
-  int get port;
+/// Adapters accept connections from a source (an HTTP server, a message
+/// queue), wrap each request in an [AdapterExchange], and hand it to the
+/// [ExchangeSink] installed by [start]. The exchange carries the response
+/// side too, so the adapter never sees a [Response] out of context.
+abstract interface class Adapter {
+  AdapterCapabilities get capabilities;
 
-  /// A stream of incoming requests from the underlying source.
-  ///
-  /// Each event in the stream is an [AdapterRequest] representing a new
-  /// request that needs to be processed by the application.
-  Stream<AdapterRequest> get requests;
+  /// The sockets this adapter is bound to.
+  List<Listener> get listeners;
 
-  /// Sends a [Response] back to the client for the given [AdapterRequest].
+  /// Begins accepting. Called exactly once.
   ///
-  /// This method is called by the Relic core after a request has been processed
-  /// and a response has been generated. The adapter is responsible for
-  /// translating the standard [Response] object into the appropriate format
-  /// for the underlying communication protocol.
-  ///
-  /// - [request]: The original [AdapterRequest] that this response corresponds to.
-  /// - [response]: The [Response] to send.
-  Future<void> respond(final AdapterRequest request, final Response response);
-
-  /// Hijacks the connection associated with the [AdapterRequest].
-  ///
-  /// This passes control of the underlying communication channel (e.g., socket)
-  /// to the provided [callback]. The callback receives a [StreamChannel]
-  /// for direct, low-level interaction with the client.
-  ///
-  /// This is typically used for protocols like SSE or to support custom
-  /// streaming scenarios where the standard request-response model, or
-  /// web-socket communication is insufficient.
-  ///
-  /// - [request]: The [AdapterRequest] whose connection is to be hijacked.
-  /// - [callback]: The [HijackCallback] that will manage the hijacked
-  /// connection.
-  ///
-  /// For web-sockets see [connect]
-  Future<void> hijack(
-    final AdapterRequest request,
-    final HijackCallback callback,
-  );
-
-  /// Establishes a web-socket connection for the given [AdapterRequest].
-  ///
-  /// The provided [callback] will be invoked with a [RelicWebSocket] that
-  /// allows sending and receiving messages the web-socket connection.
-  ///
-  /// - [request]: The [AdapterRequest] for which to establish the connection.
-  /// - [callback]: The [WebSocketCallback] that will be invoked on inbound
-  ///   connection requests.
-  Future<void> connect(
-    final AdapterRequest request,
-    final WebSocketCallback callback,
-  );
+  /// The adapter must call [sink] for every exchange, on the isolate that
+  /// called [start], and must not call it after [close] has completed.
+  void start(final ExchangeSink sink);
 
   /// Shuts down the adapter.
   ///
@@ -106,6 +110,58 @@ abstract class Adapter {
   Future<void> close({final bool force = false});
 
   ConnectionsInfo get connectionsInfo;
+}
+
+extension AdapterPort on Adapter {
+  /// The port of the first listener.
+  @Deprecated('Use listeners')
+  int get port => listeners.first.port;
+}
+
+/// One request and its response. An h1 request now, an h2 or h3 stream later.
+///
+/// The core calls one of [respond], [hijack], [upgradeWebSocket] and
+/// [abort]. When that call fails it calls [respond] with an error response,
+/// and [abort] when that fails too. The adapter is free to release
+/// everything it holds for the exchange after [done] completes.
+abstract interface class AdapterExchange {
+  HttpProtocol get protocol;
+
+  /// Converts the adapter's request into a [Request].
+  ///
+  /// May throw, for example on a malformed target. The core answers that
+  /// with 400.
+  Request toRequest();
+
+  /// Sends [response].
+  ///
+  /// Returns synchronously when the whole response was handed to the
+  /// transport in the call. Otherwise completes when the body has been
+  /// accepted by the transport, which is not the same as acknowledged by
+  /// the peer. See [done] for that.
+  FutureOr<void> respond(final Response response);
+
+  /// Takes over the raw byte stream of the connection.
+  ///
+  /// Throws [UnsupportedError] unless [AdapterCapabilities.hijack].
+  FutureOr<StreamChannel<Uint8List>> hijack();
+
+  /// Performs the WebSocket handshake and hands back the socket.
+  ///
+  /// Throws [UnsupportedError] unless [AdapterCapabilities.webSocket].
+  FutureOr<RelicWebSocket> upgradeWebSocket();
+
+  /// Drops the exchange without a response: RST_STREAM or RESET_STREAM for
+  /// h2 and h3, connection close for h1. Never throws.
+  void abort();
+
+  /// Completes when the peer went away or reset the stream before the
+  /// response finished. Handlers can use this to cancel work.
+  Future<void> get cancelled;
+
+  /// Completes when the exchange has fully finished: body flushed, upgraded,
+  /// hijacked, aborted, or cancelled by the peer.
+  Future<ExchangeEnd> get done;
 }
 
 typedef ConnectionsInfo = ({int active, int closing, int idle});

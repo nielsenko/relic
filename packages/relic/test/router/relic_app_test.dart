@@ -378,11 +378,18 @@ class _Injectable implements RouterInjectable {
 
 // Minimal fake adapter for testing
 class _FakeAdapter extends Fake implements Adapter {
-  @override
-  Stream<AdapterRequest> get requests => const Stream.empty();
+  final int port = Random().nextInt(65536);
 
   @override
-  late int port = Random().nextInt(65536);
+  List<Listener> get listeners => [
+    Listener(Transport.tcp, '127.0.0.1', port, const {HttpProtocol.http11}),
+  ];
+
+  @override
+  AdapterCapabilities get capabilities => const AdapterCapabilities();
+
+  @override
+  void start(final ExchangeSink sink) {}
 
   @override
   Future<void> close({final bool force = false}) async {}

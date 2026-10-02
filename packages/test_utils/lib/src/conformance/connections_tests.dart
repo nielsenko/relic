@@ -1,36 +1,32 @@
-import 'dart:async';
 import 'dart:io';
 
 import 'package:http/http.dart' as http;
-import 'package:relic/relic.dart';
+import 'package:relic_core/relic_core.dart';
 import 'package:test/test.dart';
-import 'package:test_utils/test_utils.dart';
 
-Handler _createDelayedHandler() {
+import '../test_utils_base.dart';
+import 'conformance.dart';
+
+Handler _delayedHandler() {
   return (final req) async {
     final delay = Platform.environment['CI'] != null ? 1000 : 100;
-    // Block for a fixed duration.
     await Future<void>.delayed(Duration(milliseconds: delay));
     return Response.ok();
   };
 }
 
-void main() {
+void connectionsTests(final AdapterConformance conformance) {
   const maxIsolates = 5;
   const maxRequests = 5;
   parameterizedGroup(
     variants: List.generate(maxIsolates, (final i) => i + 1),
-    (final i) => 'Given a RelicServer with $i isolates',
+    (final i) => 'Given a server with $i isolates',
     (final i) {
       late RelicServer server;
 
       setUp(() async {
-        server = RelicServer(
-          () => IOAdapter.bind(InternetAddress.loopbackIPv4, port: 0),
-          noOfIsolates: i,
-        );
-
-        await server.mountAndStart(_createDelayedHandler());
+        server = conformance.create(noOfIsolates: i);
+        await server.mountAndStart(_delayedHandler());
       });
 
       tearDown(() => server.close());
@@ -41,13 +37,12 @@ void main() {
             'when $j requests are in-flight across isolates, '
             'then connectionsInfo returns aggregated active and idle count of $j',
         (final j) async {
-          // Fire off j concurrent requests without awaiting
           final requests = <Future<http.Response>>[];
           for (var i = 0; i < j; i++) {
             requests.add(http.get(Uri.http('localhost:${server.port}')));
           }
 
-          // Give requests time to reach the server and start processing
+          // Give requests time to reach the server and start processing.
           await Future<void>.delayed(const Duration(milliseconds: 100));
 
           await expectLater(
@@ -61,7 +56,7 @@ void main() {
             ),
           );
 
-          await requests.wait;
+          await Future.wait(requests);
         },
       );
     },

@@ -9,7 +9,10 @@ Request fromHttpRequest(final io.HttpRequest request) {
     Method.parse(request.method),
     request.requestedUri,
     request,
-    protocolVersion: request.protocolVersion,
+    protocol: switch (request.protocolVersion) {
+      '1.0' => HttpProtocol.http10,
+      _ => HttpProtocol.http11,
+    },
     headers: headersFromHttpRequest(request),
     body: bodyFromHttpRequest(request),
     connectionInfo: connectionInfoFromHttpConnectionInfo(
