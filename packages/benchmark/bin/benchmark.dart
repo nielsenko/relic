@@ -14,6 +14,8 @@ import 'package:routingkit/routingkit.dart' as routingkit;
 import 'package:spanner/spanner.dart' as spanner;
 
 import 'package:benchmark/src/completion_script_carapace.dart';
+import 'package:benchmark/src/dispatch_benchmark.dart';
+import 'package:benchmark/src/headers_benchmark.dart';
 
 late final List<int> indexes;
 late final List<String> staticRoutesToLookup;
@@ -496,8 +498,78 @@ Future<int> main(final List<String> args) async {
   return 0;
 }
 
+/// Requests per run of the dispatch benchmarks.
+const dispatchRequests = 1000;
+
+/// One request through RelicServer and back, no socket, sync handler.
+class DispatchSyncBenchmark extends RouterBenchmark {
+  final ExchangeSink sink;
+
+  DispatchSyncBenchmark(final Emitter emitter, this.sink)
+    : super(['Dispatch', 'Sync', 'x$dispatchRequests', 'Relic'], emitter);
+
+  @override
+  void run() {
+    for (var i = 0; i < dispatchRequests; i++) {
+      sink(BenchmarkExchange());
+    }
+  }
+}
+
+/// Same, with an async handler, so every request goes through a Future.
+class DispatchAsyncBenchmark extends RouterBenchmark {
+  final ExchangeSink sink;
+
+  DispatchAsyncBenchmark(final Emitter emitter, this.sink)
+    : super(['Dispatch', 'Async', 'x$dispatchRequests', 'Relic'], emitter);
+
+  @override
+  void run() {
+    for (var i = 0; i < dispatchRequests; i++) {
+      sink(BenchmarkExchange());
+    }
+  }
+}
+
+final _dispatchResponse = Response.ok(body: Body.fromString('Hello'));
+
+/// Requests per run of the header benchmarks.
+const headerRequests = 1000;
+
+/// Builds a store per request, as an adapter does, and reads through
+/// [read]. `x1000` requests per run.
+class HeadersBenchmark extends RouterBenchmark {
+  final HeaderStore Function() store;
+  final int Function(Headers) read;
+
+  HeadersBenchmark(
+    final Emitter emitter,
+    final String storeName,
+    final String pattern,
+    this.store,
+    this.read,
+  ) : super(['Headers', pattern, 'x$headerRequests', storeName], emitter);
+
+  @override
+  void run() {
+    for (var i = 0; i < headerRequests; i++) {
+      read(Headers.fromStore(store()));
+    }
+  }
+}
+
 Future<bool> driver(final Emitter emitter) async {
+  final syncSink = await startDispatchServer((final _) => _dispatchResponse);
+  final asyncSink = await startDispatchServer(
+    (final _) async => _dispatchResponse,
+  );
   for (final benchmark in [
+    DispatchSyncBenchmark(emitter, syncSink),
+    DispatchAsyncBenchmark(emitter, asyncSink),
+    HeadersBenchmark(emitter, 'Bytes', 'Read3', byteStore, readThree),
+    HeadersBenchmark(emitter, 'Map', 'Read3', mapStore, readThree),
+    HeadersBenchmark(emitter, 'Bytes', 'ReadAll', byteStore, readAll),
+    HeadersBenchmark(emitter, 'Map', 'ReadAll', mapStore, readAll),
     StaticAddRoutingkitBenchmark(emitter),
     StaticAddSpannerBenchmark(emitter),
     StaticAddBenchmark(emitter),
