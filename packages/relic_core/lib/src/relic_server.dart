@@ -16,6 +16,8 @@ import 'headers/typed/headers/connection_header.dart';
 import 'isolated_object.dart';
 import 'logger/logger.dart';
 import 'util/util.dart';
+import 'web_socket/framed_web_socket.dart';
+import 'web_socket/web_socket_handshake.dart';
 
 sealed class RelicServer {
   /// Mounts a [handler] to the server and starts listening for requests.
@@ -66,6 +68,11 @@ final class _RelicServer implements RelicServer {
   Handler? _handler;
   bool _started = false;
 
+  /// WebSockets this server frames itself, over hijacked connections.
+  /// The adapter knows them as raw channels, so the going-away close on
+  /// shutdown is this server's job.
+  final _framedSockets = <FramedWebSocket>{};
+
   /// Creates a server with the given parameters.
   _RelicServer(final Factory<Adapter> adapterFactory)
     : _pendingAdapter = adapterFactory();
@@ -97,7 +104,14 @@ final class _RelicServer implements RelicServer {
   @override
   Future<void> close({final bool force = false}) async {
     _handler = null;
-    await (_adapter ?? await _pendingAdapter).close(force: force);
+    final adapter = _adapter ?? await _pendingAdapter;
+    final goingAway = [
+      for (final socket in _framedSockets.toList()) socket.closeGoingAway(),
+    ];
+    // The close frames are written before the adapter drops the channels.
+    // A graceful close waits for the peers' answers too.
+    if (!force) await Future.wait(goingAway);
+    await adapter.close(force: force);
   }
 
   @override
@@ -199,13 +213,58 @@ final class _RelicServer implements RelicServer {
         if (!_isOriginAllowed(request, upgrade)) {
           return exchange.respond(Response.forbidden());
         }
-        final socket = exchange.upgradeWebSocket();
-        if (socket is Future<RelicWebSocket>) {
-          return socket.then(upgrade.callback);
+        final capabilities = _adapter!.capabilities;
+        if (capabilities.webSocket) {
+          final socket = exchange.upgradeWebSocket();
+          if (socket is Future<RelicWebSocket>) {
+            return socket.then(upgrade.callback);
+          }
+          upgrade.callback(socket);
+          return null;
         }
-        upgrade.callback(socket);
-        return null;
+        if (!capabilities.hijack) {
+          return exchange.respond(Response.notImplemented());
+        }
+        return _upgradeOverHijack(exchange, request, upgrade);
     }
+  }
+
+  /// The RFC 6455 opening handshake on a raw channel, for an adapter with
+  /// no framer of its own. A request that is not a valid handshake gets
+  /// 400 and no channel.
+  FutureOr<void> _upgradeOverHijack(
+    final AdapterExchange exchange,
+    final Request request,
+    final WebSocketUpgrade upgrade,
+  ) {
+    final acceptKey = webSocketAcceptKey(request);
+    if (acceptKey == null) {
+      return exchange.respond(
+        Response.badRequest(
+          body: Body.fromString('Not a WebSocket upgrade request'),
+        ),
+      );
+    }
+    final channel = exchange.hijack();
+    if (channel is Future<StreamChannel<Uint8List>>) {
+      return channel.then(
+        (final channel) => _frame(channel, acceptKey, upgrade),
+      );
+    }
+    _frame(channel, acceptKey, upgrade);
+    return null;
+  }
+
+  void _frame(
+    final StreamChannel<Uint8List> channel,
+    final String acceptKey,
+    final WebSocketUpgrade upgrade,
+  ) {
+    channel.sink.add(webSocketHandshakeResponse(acceptKey));
+    final socket = FramedWebSocket(channel);
+    _framedSockets.add(socket);
+    unawaited(socket.done.whenComplete(() => _framedSockets.remove(socket)));
+    upgrade.callback(socket);
   }
 
   /// The last line of defence. Maps the exceptions handlers are allowed to

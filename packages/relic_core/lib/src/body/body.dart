@@ -83,6 +83,9 @@ class Body {
   /// This will be `null` after [read] is called.
   Stream<Uint8List>? _stream;
 
+  /// Whether [read] has handed the stream over. A body is read once.
+  bool get isRead => _stream == null;
+
   /// The length of the stream returned by [read], or `null` if that can't be
   /// determined efficiently.
   final int? contentLength;
