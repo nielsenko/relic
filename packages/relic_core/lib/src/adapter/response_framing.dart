@@ -49,6 +49,13 @@ final class ResponseFraming {
   /// else frames the body, so its end must.
   final bool closeAfter;
 
+  /// The Connection option to add, or null when the response sets the
+  /// header itself or needs none. `close` when [closeAfter] (RFC 9112
+  /// 9.6). `keep-alive` to an HTTP/1.0 request whose connection stays
+  /// open, which such a client takes as closed unless told (RFC 9112
+  /// C.2.2).
+  final String? connection;
+
   const ResponseFraming._({
     required this.sendBody,
     required this.contentLength,
@@ -57,6 +64,7 @@ final class ResponseFraming {
     required this.date,
     required this.dateLine,
     required this.closeAfter,
+    required this.connection,
   });
 
   /// The framing of [response] over [protocol], for a HEAD request when
@@ -98,7 +106,8 @@ final class ResponseFraming {
     }
     // Most responses set neither Connection nor Transfer-Encoding, so the
     // parse runs only when the header is there.
-    final connection = headers.contains(HeaderName.connection)
+    final setsConnection = headers.contains(HeaderName.connection);
+    final connection = setsConnection
         ? _own(() => headers.connection, HeaderName.connection)
         : null;
     var closeAfter = !keepAlive || (connection?.isClose ?? false);
@@ -145,6 +154,13 @@ final class ResponseFraming {
       date: date,
       dateLine: dateLine,
       closeAfter: closeAfter,
+      connection: setsConnection
+          ? null
+          : closeAfter
+          ? 'close'
+          : protocol == HttpProtocol.http10
+          ? 'keep-alive'
+          : null,
     );
   }
 

@@ -18,6 +18,11 @@ extension HttpResponseExtension on io.HttpResponse {
     if (contentType != null) out.set(HeaderName.contentType.lower, contentType);
     final date = framing.date;
     if (date != null) out.set(HeaderName.date.lower, date);
+    // dart:io says `close` itself when the connection is not persistent.
+    // The keep-alive an HTTP/1.0 client needs to hear is left to us.
+    if (framing.connection == 'keep-alive') {
+      out.set(HeaderName.connection.lower, 'keep-alive');
+    }
     final transferEncoding = framing.transferEncoding;
     final contentLength = framing.contentLength;
     if (contentLength != null) {
