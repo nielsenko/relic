@@ -28,7 +28,7 @@ Headers _transferEncoding(final List<TransferEncoding> codings) =>
 
 void main() {
   test('Given a body with a type, when framed, '
-      'then the Content-Type is the body\'s', () {
+      "then the Content-Type is the body's", () {
     final framing = _frame(
       Response.ok(body: Body.fromString('Relic', mimeType: MimeType.plainText)),
     );
@@ -55,7 +55,7 @@ void main() {
   });
 
   test('Given a handler-set Content-Length, when framed, '
-      'then the body\'s length wins', () {
+      "then the body's length wins", () {
     final framing = _frame(
       Response.ok(
         body: Body.fromString('ok'),

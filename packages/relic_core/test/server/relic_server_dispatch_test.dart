@@ -433,7 +433,7 @@ void main() {
 
   test('Given a handler that reads cancelled, '
       'when the exchange reports the peer gone, '
-      'then the request\'s cancelled completes', () async {
+      "then the request's cancelled completes", () async {
     Future<void>? cancelled;
     final (_, adapter) = await _serve((final req) {
       cancelled = req.cancelled;

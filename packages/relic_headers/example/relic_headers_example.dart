@@ -1,3 +1,4 @@
+// ignore_for_file: avoid_print
 // A package that depends on relic_headers alone can build a response store
 // and read any HeaderStore through the base class.
 import 'dart:typed_data';

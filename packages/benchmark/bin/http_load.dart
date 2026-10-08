@@ -174,7 +174,7 @@ Future<void> main(final List<String> args) async {
   stdout.write(table);
   if (out.isNotEmpty) {
     File(out).writeAsStringSync(table);
-    File(out.replaceAll(RegExp(r'\.md$'), '') + '.json').writeAsStringSync(
+    File('${out.replaceAll(RegExp(r'\.md$'), '')}.json').writeAsStringSync(
       const JsonEncoder.withIndent(
         '  ',
       ).convert(results.map((final m) => m.toJson()).toList()),

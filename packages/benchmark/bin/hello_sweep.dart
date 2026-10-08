@@ -54,14 +54,16 @@ Future<void> main(final List<String> args) async {
         close = () => server.close(force: true);
     }
     try {
-      final url = 'http://127.0.0.1:18099/';
+      const url = 'http://127.0.0.1:18099/';
       await _oha(url, connections, 2);
       final run = _oha(url, connections, seconds);
       // Sample this process while oha is in the middle of the run.
       await Future<void>.delayed(Duration(seconds: seconds ~/ 2));
       final cpu = await _cpuPercent();
       final result = await run;
-      final rps = (result['summary']['requestsPerSec'] as num).toDouble();
+      final rps =
+          ((result['summary'] as Map<String, dynamic>)['requestsPerSec'] as num)
+              .toDouble();
       final percentiles = result['latencyPercentiles'] as Map<String, dynamic>;
       double ms(final String key) => (percentiles[key] as num) * 1000;
       stdout.writeln(

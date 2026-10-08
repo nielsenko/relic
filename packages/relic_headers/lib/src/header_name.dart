@@ -147,83 +147,113 @@ final class HeaderName {
         if (_eqBytes(bytes, start, 'x-xss-protection')) return xXssProtection;
       case 17:
         if (_eqBytes(bytes, start, 'if-modified-since')) return ifModifiedSince;
-        if (_eqBytes(bytes, start, 'transfer-encoding'))
+        if (_eqBytes(bytes, start, 'transfer-encoding')) {
           return transferEncoding;
+        }
         if (_eqBytes(bytes, start, 'sec-websocket-key')) return secWebsocketKey;
         if (_eqBytes(bytes, start, 'x-forwarded-proto')) return xForwardedProto;
       case 18:
-        if (_eqBytes(bytes, start, 'proxy-authenticate'))
+        if (_eqBytes(bytes, start, 'proxy-authenticate')) {
           return proxyAuthenticate;
-        if (_eqBytes(bytes, start, 'permissions-policy'))
+        }
+        if (_eqBytes(bytes, start, 'permissions-policy')) {
           return permissionsPolicy;
-        if (_eqBytes(bytes, start, 'sec-ch-ua-platform'))
+        }
+        if (_eqBytes(bytes, start, 'sec-ch-ua-platform')) {
           return secChUaPlatform;
+        }
       case 19:
-        if (_eqBytes(bytes, start, 'if-unmodified-since'))
+        if (_eqBytes(bytes, start, 'if-unmodified-since')) {
           return ifUnmodifiedSince;
-        if (_eqBytes(bytes, start, 'proxy-authorization'))
+        }
+        if (_eqBytes(bytes, start, 'proxy-authorization')) {
           return proxyAuthorization;
-        if (_eqBytes(bytes, start, 'content-disposition'))
+        }
+        if (_eqBytes(bytes, start, 'content-disposition')) {
           return contentDisposition;
-        if (_eqBytes(bytes, start, 'authentication-info'))
+        }
+        if (_eqBytes(bytes, start, 'authentication-info')) {
           return authenticationInfo;
-        if (_eqBytes(bytes, start, 'timing-allow-origin'))
+        }
+        if (_eqBytes(bytes, start, 'timing-allow-origin')) {
           return timingAllowOrigin;
+        }
       case 20:
-        if (_eqBytes(bytes, start, 'sec-websocket-accept'))
+        if (_eqBytes(bytes, start, 'sec-websocket-accept')) {
           return secWebsocketAccept;
+        }
       case 21:
-        if (_eqBytes(bytes, start, 'sec-websocket-version'))
+        if (_eqBytes(bytes, start, 'sec-websocket-version')) {
           return secWebsocketVersion;
+        }
       case 22:
-        if (_eqBytes(bytes, start, 'access-control-max-age'))
+        if (_eqBytes(bytes, start, 'access-control-max-age')) {
           return accessControlMaxAge;
-        if (_eqBytes(bytes, start, 'sec-websocket-protocol'))
+        }
+        if (_eqBytes(bytes, start, 'sec-websocket-protocol')) {
           return secWebsocketProtocol;
-        if (_eqBytes(bytes, start, 'x-content-type-options'))
+        }
+        if (_eqBytes(bytes, start, 'x-content-type-options')) {
           return xContentTypeOptions;
-        if (_eqBytes(bytes, start, 'x-dns-prefetch-control'))
+        }
+        if (_eqBytes(bytes, start, 'x-dns-prefetch-control')) {
           return xDnsPrefetchControl;
+        }
       case 23:
-        if (_eqBytes(bytes, start, 'content-security-policy'))
+        if (_eqBytes(bytes, start, 'content-security-policy')) {
           return contentSecurityPolicy;
+        }
       case 24:
-        if (_eqBytes(bytes, start, 'sec-websocket-extensions'))
+        if (_eqBytes(bytes, start, 'sec-websocket-extensions')) {
           return secWebsocketExtensions;
+        }
       case 25:
-        if (_eqBytes(bytes, start, 'strict-transport-security'))
+        if (_eqBytes(bytes, start, 'strict-transport-security')) {
           return strictTransportSecurity;
-        if (_eqBytes(bytes, start, 'upgrade-insecure-requests'))
+        }
+        if (_eqBytes(bytes, start, 'upgrade-insecure-requests')) {
           return upgradeInsecureRequests;
+        }
       case 26:
-        if (_eqBytes(bytes, start, 'cross-origin-opener-policy'))
+        if (_eqBytes(bytes, start, 'cross-origin-opener-policy')) {
           return crossOriginOpenerPolicy;
+        }
       case 27:
-        if (_eqBytes(bytes, start, 'access-control-allow-origin'))
+        if (_eqBytes(bytes, start, 'access-control-allow-origin')) {
           return accessControlAllowOrigin;
+        }
       case 28:
-        if (_eqBytes(bytes, start, 'access-control-allow-methods'))
+        if (_eqBytes(bytes, start, 'access-control-allow-methods')) {
           return accessControlAllowMethods;
-        if (_eqBytes(bytes, start, 'access-control-allow-headers'))
+        }
+        if (_eqBytes(bytes, start, 'access-control-allow-headers')) {
           return accessControlAllowHeaders;
-        if (_eqBytes(bytes, start, 'cross-origin-resource-policy'))
+        }
+        if (_eqBytes(bytes, start, 'cross-origin-resource-policy')) {
           return crossOriginResourcePolicy;
-        if (_eqBytes(bytes, start, 'cross-origin-embedder-policy'))
+        }
+        if (_eqBytes(bytes, start, 'cross-origin-embedder-policy')) {
           return crossOriginEmbedderPolicy;
+        }
       case 29:
-        if (_eqBytes(bytes, start, 'access-control-request-method'))
+        if (_eqBytes(bytes, start, 'access-control-request-method')) {
           return accessControlRequestMethod;
-        if (_eqBytes(bytes, start, 'access-control-expose-headers'))
+        }
+        if (_eqBytes(bytes, start, 'access-control-expose-headers')) {
           return accessControlExposeHeaders;
+        }
       case 30:
-        if (_eqBytes(bytes, start, 'access-control-request-headers'))
+        if (_eqBytes(bytes, start, 'access-control-request-headers')) {
           return accessControlRequestHeaders;
+        }
       case 32:
-        if (_eqBytes(bytes, start, 'access-control-allow-credentials'))
+        if (_eqBytes(bytes, start, 'access-control-allow-credentials')) {
           return accessControlAllowCredentials;
+        }
       case 35:
-        if (_eqBytes(bytes, start, 'content-security-policy-report-only'))
+        if (_eqBytes(bytes, start, 'content-security-policy-report-only')) {
           return contentSecurityPolicyReportOnly;
+        }
     }
     return null;
   }
@@ -873,54 +903,73 @@ final class HeaderName {
       case 21:
         if (_eqUnits(name, 'sec-websocket-version')) return secWebsocketVersion;
       case 22:
-        if (_eqUnits(name, 'access-control-max-age'))
+        if (_eqUnits(name, 'access-control-max-age')) {
           return accessControlMaxAge;
-        if (_eqUnits(name, 'sec-websocket-protocol'))
+        }
+        if (_eqUnits(name, 'sec-websocket-protocol')) {
           return secWebsocketProtocol;
-        if (_eqUnits(name, 'x-content-type-options'))
+        }
+        if (_eqUnits(name, 'x-content-type-options')) {
           return xContentTypeOptions;
-        if (_eqUnits(name, 'x-dns-prefetch-control'))
+        }
+        if (_eqUnits(name, 'x-dns-prefetch-control')) {
           return xDnsPrefetchControl;
+        }
       case 23:
-        if (_eqUnits(name, 'content-security-policy'))
+        if (_eqUnits(name, 'content-security-policy')) {
           return contentSecurityPolicy;
+        }
       case 24:
-        if (_eqUnits(name, 'sec-websocket-extensions'))
+        if (_eqUnits(name, 'sec-websocket-extensions')) {
           return secWebsocketExtensions;
+        }
       case 25:
-        if (_eqUnits(name, 'strict-transport-security'))
+        if (_eqUnits(name, 'strict-transport-security')) {
           return strictTransportSecurity;
-        if (_eqUnits(name, 'upgrade-insecure-requests'))
+        }
+        if (_eqUnits(name, 'upgrade-insecure-requests')) {
           return upgradeInsecureRequests;
+        }
       case 26:
-        if (_eqUnits(name, 'cross-origin-opener-policy'))
+        if (_eqUnits(name, 'cross-origin-opener-policy')) {
           return crossOriginOpenerPolicy;
+        }
       case 27:
-        if (_eqUnits(name, 'access-control-allow-origin'))
+        if (_eqUnits(name, 'access-control-allow-origin')) {
           return accessControlAllowOrigin;
+        }
       case 28:
-        if (_eqUnits(name, 'access-control-allow-methods'))
+        if (_eqUnits(name, 'access-control-allow-methods')) {
           return accessControlAllowMethods;
-        if (_eqUnits(name, 'access-control-allow-headers'))
+        }
+        if (_eqUnits(name, 'access-control-allow-headers')) {
           return accessControlAllowHeaders;
-        if (_eqUnits(name, 'cross-origin-resource-policy'))
+        }
+        if (_eqUnits(name, 'cross-origin-resource-policy')) {
           return crossOriginResourcePolicy;
-        if (_eqUnits(name, 'cross-origin-embedder-policy'))
+        }
+        if (_eqUnits(name, 'cross-origin-embedder-policy')) {
           return crossOriginEmbedderPolicy;
+        }
       case 29:
-        if (_eqUnits(name, 'access-control-request-method'))
+        if (_eqUnits(name, 'access-control-request-method')) {
           return accessControlRequestMethod;
-        if (_eqUnits(name, 'access-control-expose-headers'))
+        }
+        if (_eqUnits(name, 'access-control-expose-headers')) {
           return accessControlExposeHeaders;
+        }
       case 30:
-        if (_eqUnits(name, 'access-control-request-headers'))
+        if (_eqUnits(name, 'access-control-request-headers')) {
           return accessControlRequestHeaders;
+        }
       case 32:
-        if (_eqUnits(name, 'access-control-allow-credentials'))
+        if (_eqUnits(name, 'access-control-allow-credentials')) {
           return accessControlAllowCredentials;
+        }
       case 35:
-        if (_eqUnits(name, 'content-security-policy-report-only'))
+        if (_eqUnits(name, 'content-security-policy-report-only')) {
           return contentSecurityPolicyReportOnly;
+        }
     }
     return null;
   }

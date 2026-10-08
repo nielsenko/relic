@@ -194,7 +194,7 @@ void main() {
       test('when compared with ==, '
           'then they are not equal.', () {
         final tv = TokenValue('foo');
-        final other = _EnumLikeToken('foo');
+        const other = _EnumLikeToken('foo');
 
         // ignore: unrelated_type_equality_checks
         expect(tv == other, isFalse);
@@ -203,7 +203,7 @@ void main() {
       test('when compared with Token.equals, '
           'then they are reported equal by wire value.', () {
         final tv = TokenValue('foo');
-        final other = _EnumLikeToken('foo');
+        const other = _EnumLikeToken('foo');
 
         expect(Token.equals(tv, other), isTrue);
       });

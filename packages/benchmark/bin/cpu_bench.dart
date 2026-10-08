@@ -8,6 +8,7 @@
 // The command must listen on --url (default http://127.0.0.1:18099/).
 // Its process and the children it forks are measured together, which
 // covers a Node cluster or a Go server as well as a Relic one.
+import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
@@ -37,8 +38,8 @@ Future<void> main(final List<String> args) async {
     return;
   }
   final server = await Process.start(command.first, command.sublist(1));
-  server.stdout.drain<void>();
-  server.stderr.drain<void>();
+  unawaited(server.stdout.drain<void>());
+  unawaited(server.stderr.drain<void>());
   var pids = [server.pid];
   try {
     await _waitForServer(url);
@@ -53,7 +54,9 @@ Future<void> main(final List<String> args) async {
     final count = (result['statusCodeDistribution'] as Map<String, dynamic>)
         .values
         .fold<int>(0, (final sum, final n) => sum + (n as int));
-    final rps = (result['summary']['requestsPerSec'] as num).toDouble();
+    final rps =
+        ((result['summary'] as Map<String, dynamic>)['requestsPerSec'] as num)
+            .toDouble();
     final percentiles = result['latencyPercentiles'] as Map<String, dynamic>;
     double ms(final String key) => (percentiles[key] as num) * 1000;
     stdout.writeln(

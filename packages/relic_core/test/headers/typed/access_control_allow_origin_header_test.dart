@@ -7,7 +7,7 @@ void main() {
       test('when their hashCodes are compared, '
           'then they differ (no bucket-0 collision).', () {
         const wildcard = AccessControlAllowOriginHeader.wildcard();
-        final opaque = AccessControlAllowOriginHeader.origin(
+        const opaque = AccessControlAllowOriginHeader.origin(
           origin: OpaqueOrigin.instance,
         );
 

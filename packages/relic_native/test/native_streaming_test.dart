@@ -271,7 +271,7 @@ void main() {
 
       final socket = await Socket.connect('127.0.0.1', server.port);
       socket.write(
-        'POST / HTTP/1.1\r\nHost: x\r\nContent-Length: ${_bigLength}\r\n\r\n',
+        'POST / HTTP/1.1\r\nHost: x\r\nContent-Length: $_bigLength\r\n\r\n',
       );
       socket.add(_pattern(1000));
       await socket.flush();

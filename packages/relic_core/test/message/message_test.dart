@@ -49,6 +49,7 @@ void main() {
       );
       // Headers has no []= at all, so the only way to try is dynamically.
       final dynamic headers = message.headers;
+      // ignore: avoid_dynamic_calls
       expect(() => headers['h1'] = ['value1'], throwsNoSuchMethodError);
       expect(message.headers, isNot(isA<MutableHeaders>()));
     });

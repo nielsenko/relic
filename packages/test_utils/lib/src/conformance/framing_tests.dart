@@ -104,8 +104,8 @@ void framingTests(final AdapterConformance conformance) {
       expect(rest, isEmpty);
     });
 
-    test('when a handler sets a Content-Length that is not the body\'s, '
-        'then the body\'s length goes on the wire', () async {
+    test("when a handler sets a Content-Length that is not the body's, "
+        "then the body's length goes on the wire", () async {
       await serve(
         (final req) => Response.ok(
           body: Body.fromString('ok'),

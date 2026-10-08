@@ -75,6 +75,7 @@ typedef HeaderValues = AccessorStateMixin<HeaderName, Iterable<String>>;
 /// ```
 final class Headers extends HeaderStore
     with AccessorStateMixin<HeaderName, Iterable<String>>, _StoreReads {
+  @override
   final HeaderStore _store;
 
   Headers._(this._store);

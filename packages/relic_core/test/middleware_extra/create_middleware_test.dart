@@ -15,7 +15,7 @@ void main() {
           .addHandler(
             createSyncHandler(
               headers: Headers.build(
-                (final mh) => mh.from = FromHeader('next@serverpod.dev'),
+                (final mh) => mh.from = const FromHeader('next@serverpod.dev'),
               ),
             ),
           );
@@ -145,7 +145,8 @@ void main() {
             .addHandler(
               createSyncHandler(
                 headers: Headers.build(
-                  (final mh) => mh.from = FromHeader('handler@serverpod.dev'),
+                  (final mh) =>
+                      mh.from = const FromHeader('handler@serverpod.dev'),
                 ),
               ),
             );
@@ -177,7 +178,8 @@ void main() {
               return Future(
                 () => createSyncHandler(
                   headers: Headers.build(
-                    (final mh) => mh.from = FromHeader('handler@serverpod.dev'),
+                    (final mh) =>
+                        mh.from = const FromHeader('handler@serverpod.dev'),
                   ),
                 )(req),
               );
@@ -328,6 +330,6 @@ Response _failHandler(final Request request) => fail('should never get here');
 final Response _middlewareResponse = Response.ok(
   body: Body.fromString('middleware content'),
   headers: Headers.build(
-    (final mh) => mh.from = FromHeader('middleware@serverpod.dev'),
+    (final mh) => mh.from = const FromHeader('middleware@serverpod.dev'),
   ),
 );

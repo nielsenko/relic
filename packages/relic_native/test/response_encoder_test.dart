@@ -100,7 +100,7 @@ void main() {
       'then it is rejected', () {
     final response = Response.ok(
       headers: Headers.build(
-        (final h) => h[HeaderName.custom('x-note')] = ['smørrebrød ☃'],
+        (final h) => h[const HeaderName.custom('x-note')] = ['smørrebrød ☃'],
       ),
     );
     expect(() => _encode(response), throwsA(isA<ArgumentError>()));

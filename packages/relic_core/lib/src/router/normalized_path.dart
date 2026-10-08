@@ -1,5 +1,6 @@
-import '../adapter/request_target.dart';
 import 'package:meta/meta.dart';
+
+import '../adapter/request_target.dart';
 
 /// Represents a URL path that has been normalized.
 ///

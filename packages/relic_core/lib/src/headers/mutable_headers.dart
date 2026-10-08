@@ -9,6 +9,7 @@ part of 'headers.dart';
 /// that would end the field.
 final class MutableHeaders extends MutableHeaderStore
     with AccessorStateMixin<HeaderName, Iterable<String>>, _StoreReads {
+  @override
   final MutableHeaderStore _store;
 
   MutableHeaders._(this._store);

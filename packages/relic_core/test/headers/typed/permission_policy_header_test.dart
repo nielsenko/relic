@@ -76,7 +76,7 @@ void main() {
           'then it throws (matching the parser).', () {
         expect(
           () => PermissionsPolicyHeader.directives([
-            PermissionsPolicyDirective(name: '', values: const []),
+            const PermissionsPolicyDirective(name: '', values: []),
           ]),
           throwsFormatException,
         );
@@ -100,9 +100,9 @@ void main() {
         () {
           expect(
             () => PermissionsPolicyHeader.directives([
-              PermissionsPolicyDirective(
+              const PermissionsPolicyDirective(
                 name: 'geolocation allow',
-                values: const [],
+                values: [],
               ),
             ]),
             throwsFormatException,
@@ -117,7 +117,7 @@ void main() {
       test('when encoded, '
           'then it is rendered as a quoted sf-string.', () {
         final header = PermissionsPolicyHeader.directives([
-          PermissionsPolicyDirective(
+          const PermissionsPolicyDirective(
             name: 'geolocation',
             values: ['self', 'https://example.com'],
           ),
@@ -134,7 +134,10 @@ void main() {
       test('when re-parsed, '
           'then the original values are recovered.', () {
         final header = PermissionsPolicyHeader.directives([
-          PermissionsPolicyDirective(name: 'camera', values: ['hello world']),
+          const PermissionsPolicyDirective(
+            name: 'camera',
+            values: ['hello world'],
+          ),
         ]);
 
         final wire = PermissionsPolicyHeader.codec.encode(header).single;
@@ -151,7 +154,7 @@ void main() {
       test('when encoded, '
           'then it throws to prevent header injection.', () {
         final header = PermissionsPolicyHeader.directives([
-          PermissionsPolicyDirective(
+          const PermissionsPolicyDirective(
             name: 'geolocation',
             values: ['https://x.com\r\nSet-Cookie: evil=1'],
           ),
