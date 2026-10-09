@@ -765,7 +765,7 @@ final class NativeExchange extends LinkedListEntry<NativeExchange>
       framing.chunked,
     );
     _adapter._scheduleDrain();
-    final finished = Completer<void>();
+    final finished = _streamDone = Completer<void>();
     _outbound = chunks.listen(
       (final chunk) {
         if (chunk.isEmpty) return;
@@ -773,8 +773,7 @@ final class NativeExchange extends LinkedListEntry<NativeExchange>
         _adapter._scheduleDrain();
         if (!native.writeChunk(view, buffer, chunk.length)) {
           native.free(buffer);
-          _failStream(view);
-          finished.completeError(StateError('relic_native: out of memory'));
+          _failStream(view, StateError('relic_native: out of memory'));
           return;
         }
         _outSent++;
@@ -790,8 +789,7 @@ final class NativeExchange extends LinkedListEntry<NativeExchange>
         finished.complete();
       },
       onError: (final Object error, final StackTrace stackTrace) {
-        _failStream(view);
-        finished.completeError(error, stackTrace);
+        _failStream(view, error, stackTrace);
       },
       cancelOnError: true,
     );
@@ -800,14 +798,35 @@ final class NativeExchange extends LinkedListEntry<NativeExchange>
 
   Pointer<native.ExchangeView>? _streamView;
 
+  /// The future [respond] returned for a streamed response, while the
+  /// stream is being written.
+  Completer<void>? _streamDone;
+
   /// Ends a streamed response that cannot be finished. The native side
-  /// drops the connection.
-  void _failStream(final Pointer<native.ExchangeView> view) {
+  /// drops the connection, and the respond that streamed it fails with
+  /// [error], or with the dropped connection when the body itself was
+  /// fine.
+  void _failStream(
+    final Pointer<native.ExchangeView> view, [
+    final Object? error,
+    final StackTrace? stackTrace,
+  ]) {
     unawaited(_outbound?.cancel());
     _outbound = null;
     native.finishStream(view, false);
     _adapter._scheduleDrain();
     _finish(ExchangeEnd.aborted);
+    final done = _streamDone;
+    _streamDone = null;
+    if (done != null && !done.isCompleted) {
+      done.completeError(
+        error ??
+            const io.SocketException(
+              'The connection closed before the body was sent',
+            ),
+        stackTrace,
+      );
+    }
   }
 
   /// Encodes the head and [bytes] straight into the connection's write
