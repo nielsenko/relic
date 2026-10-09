@@ -196,20 +196,18 @@ final class IOExchange implements AdapterExchange {
   @override
   Request toRequest() => fromHttpRequest(_request, this);
 
+  /// A write that fails leaves the exchange open. The core answers with an
+  /// error response, and [abort] when that fails too, which is what ends
+  /// the exchange.
   @override
   Future<void> respond(final Response response) async {
-    try {
-      await response.writeHttpResponse(
-        _request.response,
-        method: Method.parse(_request.method),
-        protocol: httpProtocolOf(_request),
-        keepAlive: _request.persistentConnection,
-      );
-      _finish(ExchangeEnd.completed);
-    } catch (_) {
-      _finish(ExchangeEnd.aborted);
-      rethrow;
-    }
+    await response.writeHttpResponse(
+      _request.response,
+      method: Method.parse(_request.method),
+      protocol: httpProtocolOf(_request),
+      keepAlive: _request.persistentConnection,
+    );
+    _finish(ExchangeEnd.completed);
   }
 
   @override
@@ -232,13 +230,24 @@ final class IOExchange implements AdapterExchange {
   void abort() {
     if (_end != null) return;
     _finish(ExchangeEnd.aborted);
-    unawaited(
-      _request.response
-          .detachSocket(writeHeaders: false)
-          .then((final socket) => socket.destroy())
-          .catchError((final _) => _request.response.close())
-          .catchError((final _) {}),
-    );
+    final response = _request.response;
+    try {
+      unawaited(
+        response
+            .detachSocket(writeHeaders: false)
+            .then((final socket) => socket.destroy())
+            .catchError((final _) {}),
+      );
+    } on StateError {
+      // The head went out, and dart:io detaches no such response. It does
+      // destroy the connection of a response that ends in an error, which
+      // a body that failed on the socket already did.
+      try {
+        response.addError(const io.SocketException('aborted'));
+      } on StateError {
+        // The failed body is still bound to the response.
+      }
+    }
   }
 
   @override

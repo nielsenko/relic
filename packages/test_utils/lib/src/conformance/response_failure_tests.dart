@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 import 'package:relic_core/relic_core.dart';
@@ -82,4 +84,60 @@ void responseFailureTests(final AdapterConformance conformance) {
       );
     });
   });
+
+  group(
+    'Given a handler whose streamed body fails after the head went out',
+    () {
+      late RelicServer server;
+
+      setUp(() async {
+        server = await conformance.serve((final req) {
+          final body = StreamController<Uint8List>();
+          body
+            ..add(Uint8List.fromList(utf8.encode('partial')))
+            ..addError(StateError('the source went away'))
+            ..close();
+          return Response.ok(body: Body.fromDataStream(body.stream));
+        });
+      });
+
+      tearDown(() => server.close(force: true));
+
+      test('when a request is made, '
+          'then the connection is closed rather than left open.', () async {
+        final socket = await Socket.connect('localhost', server.port);
+        socket.write('GET / HTTP/1.1\r\nHost: localhost\r\n\r\n');
+        await socket.flush();
+
+        final reply = await utf8
+            .decodeStream(socket)
+            .timeout(
+              const Duration(seconds: 5),
+              onTimeout: () => fail(
+                'The connection stayed open after the body failed to write.',
+              ),
+            );
+
+        expect(reply, startsWith('HTTP/1.1 200'));
+        socket.destroy();
+      });
+
+      test('when a request is made, '
+          'then a graceful close completes.', () async {
+        final socket = await Socket.connect('localhost', server.port);
+        socket.write('GET / HTTP/1.1\r\nHost: localhost\r\n\r\n');
+        await socket.flush();
+        await utf8.decodeStream(socket).timeout(const Duration(seconds: 5));
+        socket.destroy();
+
+        await expectLater(
+          server.close().timeout(const Duration(seconds: 5)),
+          completes,
+          reason:
+              'A connection whose body failed to write must not be counted '
+              'as in flight',
+        );
+      });
+    },
+  );
 }
