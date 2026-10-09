@@ -34,6 +34,31 @@ void main() {
     expect(reply, endsWith('http://[::1]:${server.port}/p'));
   });
 
+  test('Given an HTTP/1.1 request without a Host, when it is sent, '
+      'then the server answers 400', () async {
+    await serve(InternetAddress.loopbackIPv4);
+
+    final reply = await send(
+      InternetAddress.loopbackIPv4,
+      'GET /p HTTP/1.1\r\nConnection: close\r\n\r\n',
+    );
+
+    expect(reply, startsWith('HTTP/1.1 400'));
+  });
+
+  test('Given a request with two Host fields, when it is sent, '
+      'then the server answers 400', () async {
+    await serve(InternetAddress.loopbackIPv4);
+
+    final reply = await send(
+      InternetAddress.loopbackIPv4,
+      'GET /p HTTP/1.1\r\nHost: a.example\r\nHost: b.example\r\n'
+      'Connection: close\r\n\r\n',
+    );
+
+    expect(reply, startsWith('HTTP/1.1 400'));
+  });
+
   test('Given a Host with an unterminated bracket, when it is sent, '
       'then the server answers 400', () async {
     await serve(InternetAddress.loopbackIPv4);

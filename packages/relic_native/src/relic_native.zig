@@ -1242,7 +1242,11 @@ fn parseHead(bytes: []const u8, head_copy: []u8, slots: []HeaderSlot) ParseHeadE
         // The names that matter here have seven lengths between them, so
         // most fields are passed over on their length alone.
         switch (name.len) {
-            4 => if (host_slot < 0 and std.ascii.eqlIgnoreCase(name, "host")) {
+            4 => if (std.ascii.eqlIgnoreCase(name, "host")) {
+                // A second Host is answered 400 (RFC 9112 3.2): a proxy in
+                // front and this server could otherwise route on
+                // different ones.
+                if (host_slot >= 0) return error.MalformedHead;
                 host_slot = @intCast(n);
             },
             6 => if (std.ascii.eqlIgnoreCase(name, "expect")) {
@@ -1270,6 +1274,9 @@ fn parseHead(bytes: []const u8, head_copy: []u8, slots: []HeaderSlot) ParseHeadE
         }
         n += 1;
     }
+    // HTTP/1.1 requires Host (RFC 9112 3.2). An HTTP/1.0 request without
+    // one resolves to the listener address on the Dart side.
+    if (head.version == .@"HTTP/1.1" and host_slot < 0) return error.MalformedHead;
     @memcpy(head_copy[0..bytes.len], bytes);
     return .{ .head = head, .count = n, .host_slot = host_slot };
 }
@@ -2119,6 +2126,18 @@ test "head: a request target is visible ASCII and nothing else" {
     try std.testing.expect(isTarget("/0123456789abcdef0123456789abcdef/end"));
     try std.testing.expect(!isTarget("/0123456789abcdef0123456 89abcdef"));
     try std.testing.expect(!isTarget("/0123456789abcdef0123456789abcdef\x80"));
+}
+
+test "head: HTTP/1.1 needs one Host and HTTP/1.0 may have none" {
+    var head_copy: [max_head]u8 = undefined;
+    var slots: [max_headers]HeaderSlot = undefined;
+    const one = try parseHead("GET / HTTP/1.1\r\nHost: a\r\n\r\n", &head_copy, &slots);
+    try std.testing.expectEqual(@as(i32, 0), one.host_slot);
+    const none10 = try parseHead("GET / HTTP/1.0\r\n\r\n", &head_copy, &slots);
+    try std.testing.expectEqual(@as(i32, -1), none10.host_slot);
+    try std.testing.expectError(error.MalformedHead, parseHead("GET / HTTP/1.1\r\n\r\n", &head_copy, &slots));
+    try std.testing.expectError(error.MalformedHead, parseHead("GET / HTTP/1.1\r\nHost: a\r\nHost: b\r\n\r\n", &head_copy, &slots));
+    try std.testing.expectError(error.MalformedHead, parseHead("GET / HTTP/1.0\r\nHost: a\r\nhost: a\r\n\r\n", &head_copy, &slots));
 }
 
 test "fuzz: the request parse path panics on nothing and indexes within the head" {
