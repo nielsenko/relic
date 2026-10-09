@@ -1256,7 +1256,7 @@ fn parseHead(bytes: []const u8, head_copy: []u8, slots: []HeaderSlot) ParseHeadE
             },
             14 => if (std.ascii.eqlIgnoreCase(name, "content-length")) {
                 if (head.content_length != null) return error.MalformedHead;
-                head.content_length = std.fmt.parseInt(u64, value, 10) catch return error.MalformedHead;
+                head.content_length = parseContentLength(value) orelse return error.MalformedHead;
             },
             16 => if (std.ascii.eqlIgnoreCase(name, "content-encoding")) {
                 if (head.transfer_compression != .identity) return error.MalformedHead;
@@ -1357,6 +1357,20 @@ fn isToken(name: []const u8) bool {
 
 /// Whether `bytes` holds a control character other than a tab: anything
 /// below a space, or DEL.
+/// A Content-Length value: 1*DIGIT (RFC 9110 8.6). std.fmt.parseInt
+/// would also take a sign and `_` separators, which a proxy in front
+/// reads as another length or not at all.
+fn parseContentLength(value: []const u8) ?u64 {
+    if (value.len == 0) return null;
+    var length: u64 = 0;
+    for (value) |c| {
+        if (c < '0' or c > '9') return null;
+        length = std.math.mul(u64, length, 10) catch return null;
+        length = std.math.add(u64, length, c - '0') catch return null;
+    }
+    return length;
+}
+
 fn hasControl(bytes: []const u8) bool {
     const Bytes16 = @Vector(16, u8);
     var i: usize = 0;
@@ -2054,6 +2068,19 @@ test "head: a field value refuses control characters but a tab" {
     try std.testing.expect(!hasControl("0123456789abcdef0123456789abcdef\tend"));
     try std.testing.expect(hasControl("0123456789abcdef01234567\x0189abcdef"));
     try std.testing.expect(hasControl("0123456789abcdef0123456789abcdef\x1f"));
+}
+
+test "head: Content-Length is decimal digits and nothing else" {
+    try std.testing.expectEqual(@as(?u64, 0), parseContentLength("0"));
+    try std.testing.expectEqual(@as(?u64, 1234567890), parseContentLength("1234567890"));
+    try std.testing.expectEqual(@as(?u64, std.math.maxInt(u64)), parseContentLength("18446744073709551615"));
+    try std.testing.expectEqual(@as(?u64, null), parseContentLength(""));
+    try std.testing.expectEqual(@as(?u64, null), parseContentLength("+10"));
+    try std.testing.expectEqual(@as(?u64, null), parseContentLength("-1"));
+    try std.testing.expectEqual(@as(?u64, null), parseContentLength("1_0"));
+    try std.testing.expectEqual(@as(?u64, null), parseContentLength("10 "));
+    try std.testing.expectEqual(@as(?u64, null), parseContentLength("0x10"));
+    try std.testing.expectEqual(@as(?u64, null), parseContentLength("18446744073709551616"));
 }
 
 test "fuzz: the request parse path panics on nothing and indexes within the head" {

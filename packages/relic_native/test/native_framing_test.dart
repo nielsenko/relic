@@ -48,6 +48,34 @@ void main() {
     expect(reply, startsWith('HTTP/1.1 400'));
   });
 
+  test('Given a Content-Length with a sign, when it is sent, '
+      'then the server answers 400 and closes', () async {
+    final reply = await send(
+      'POST / HTTP/1.1\r\nHost: x\r\nContent-Length: +2\r\n\r\nhi',
+    );
+
+    expect(reply, startsWith('HTTP/1.1 400'));
+  });
+
+  test('Given a Content-Length with a digit separator, when it is sent, '
+      'then the server answers 400 and closes', () async {
+    final reply = await send(
+      'POST / HTTP/1.1\r\nHost: x\r\nContent-Length: 1_0\r\n\r\n0123456789',
+    );
+
+    expect(reply, startsWith('HTTP/1.1 400'));
+  });
+
+  test('Given a Content-Length of digits, when it is sent, '
+      'then the request is served', () async {
+    final reply = await send(
+      'POST / HTTP/1.1\r\nHost: x\r\nContent-Length: 2\r\n'
+      'Connection: close\r\n\r\nhi',
+    );
+
+    expect(reply, startsWith('HTTP/1.1 200'));
+  });
+
   test('Given a CRLF framed head, when it is sent, '
       'then the request is served', () async {
     final reply = await send(
