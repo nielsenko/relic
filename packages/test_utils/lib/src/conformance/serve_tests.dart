@@ -358,6 +358,25 @@ void serveTests(final AdapterConformance conformance) {
     expect(await utf8.decodeStream(socket), contains('400 Bad Request'));
   });
 
+  test('Given a request with a method relic has no Method for, '
+      'when the request is made, then the client receives a 400', () async {
+    await scheduleServer(syncHandler);
+    final socket = await Socket.connect('localhost', serverPort());
+
+    try {
+      socket.write('PROPFIND / HTTP/1.1\r\n');
+      socket.write('Host: localhost\r\n');
+      socket.write('\r\n');
+    } finally {
+      await socket.close();
+    }
+
+    expect(
+      await utf8.decodeStream(socket).timeout(const Duration(seconds: 5)),
+      contains('400 Bad Request'),
+    );
+  });
+
   test('Given a request target with a fragment, when the request is made, '
       'then the client receives a 400', () async {
     await scheduleServer(syncHandler);

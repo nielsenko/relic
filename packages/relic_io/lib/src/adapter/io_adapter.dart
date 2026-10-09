@@ -203,12 +203,18 @@ final class IOExchange implements AdapterExchange {
   Future<void> respond(final Response response) async {
     await response.writeHttpResponse(
       _request.response,
-      method: Method.parse(_request.method),
+      method: _framingMethod,
       protocol: httpProtocolOf(_request),
       keepAlive: _request.persistentConnection,
     );
     _finish(ExchangeEnd.completed);
   }
+
+  /// Only HEAD changes how a response is framed, so every other method
+  /// frames as GET. That includes one relic has no [Method] for, whose
+  /// 400 must still go out.
+  Method get _framingMethod =>
+      _request.method == Method.head.value ? Method.head : Method.get;
 
   @override
   Future<StreamChannel<Uint8List>> hijack() async {
