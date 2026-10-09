@@ -1307,9 +1307,11 @@ fn parseRequestLine(line: []const u8) ParseHeadError!Head {
         .@"HTTP/1.0"
     else
         return error.MalformedHead;
+    const target = line[method_end + 1 .. version_start];
+    if (!isTarget(target)) return error.MalformedHead;
     return .{
         .method = method,
-        .target = line[method_end + 1 .. version_start],
+        .target = target,
         .version = version,
         .expect = null,
         .content_type = null,
@@ -1369,6 +1371,25 @@ fn parseContentLength(value: []const u8) ?u64 {
         length = std.math.add(u64, length, c - '0') catch return null;
     }
     return length;
+}
+
+/// A request target is at least one byte, all of them visible ASCII
+/// (RFC 9112 3 over RFC 3986). The request line is split on its first and
+/// last space, so a space in between would otherwise end up in here.
+fn isTarget(bytes: []const u8) bool {
+    if (bytes.len == 0) return false;
+    const Bytes16 = @Vector(16, u8);
+    var i: usize = 0;
+    while (i + 16 <= bytes.len) : (i += 16) {
+        const block: Bytes16 = bytes[i..][0..16].*;
+        const low: u16 = @bitCast(block <= @as(Bytes16, @splat(' ')));
+        const high: u16 = @bitCast(block >= @as(Bytes16, @splat(0x7f)));
+        if (low | high != 0) return false;
+    }
+    for (bytes[i..]) |c| {
+        if (c <= ' ' or c >= 0x7f) return false;
+    }
+    return true;
 }
 
 fn hasControl(bytes: []const u8) bool {
@@ -2081,6 +2102,23 @@ test "head: Content-Length is decimal digits and nothing else" {
     try std.testing.expectEqual(@as(?u64, null), parseContentLength("10 "));
     try std.testing.expectEqual(@as(?u64, null), parseContentLength("0x10"));
     try std.testing.expectEqual(@as(?u64, null), parseContentLength("18446744073709551616"));
+}
+
+test "head: a request target is visible ASCII and nothing else" {
+    try std.testing.expect(isTarget("/"));
+    try std.testing.expect(isTarget("/a/b?c=d%20e#"));
+    try std.testing.expect(isTarget("http://h:80/p"));
+    try std.testing.expect(isTarget("*"));
+    try std.testing.expect(!isTarget(""));
+    try std.testing.expect(!isTarget("/a b"));
+    try std.testing.expect(!isTarget("/a\tb"));
+    try std.testing.expect(!isTarget("/a\x00b"));
+    try std.testing.expect(!isTarget("/a\x7f"));
+    try std.testing.expect(!isTarget("/caf\xc3\xa9"));
+    // Past the first vector chunk, in the chunk and in the tail.
+    try std.testing.expect(isTarget("/0123456789abcdef0123456789abcdef/end"));
+    try std.testing.expect(!isTarget("/0123456789abcdef0123456 89abcdef"));
+    try std.testing.expect(!isTarget("/0123456789abcdef0123456789abcdef\x80"));
 }
 
 test "fuzz: the request parse path panics on nothing and indexes within the head" {

@@ -48,6 +48,36 @@ void main() {
     expect(reply, startsWith('HTTP/1.1 400'));
   });
 
+  test('Given a request target with a space, when it is sent, '
+      'then the server answers 400 and closes', () async {
+    final reply = await send('GET /a b HTTP/1.1\r\nHost: x\r\n\r\n');
+
+    expect(reply, startsWith('HTTP/1.1 400'));
+  });
+
+  test('Given a request target with raw UTF-8, when it is sent, '
+      'then the server answers 400 and closes', () async {
+    final reply = await send('GET /café HTTP/1.1\r\nHost: x\r\n\r\n');
+
+    expect(reply, startsWith('HTTP/1.1 400'));
+  });
+
+  test('Given an empty request target, when it is sent, '
+      'then the server answers 400 and closes', () async {
+    final reply = await send('GET  HTTP/1.1\r\nHost: x\r\n\r\n');
+
+    expect(reply, startsWith('HTTP/1.1 400'));
+  });
+
+  test('Given a percent-encoded request target, when it is sent, '
+      'then the request is served', () async {
+    final reply = await send(
+      'GET /caf%C3%A9?q=a%20b HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n',
+    );
+
+    expect(reply, startsWith('HTTP/1.1 200'));
+  });
+
   test('Given a Content-Length with a sign, when it is sent, '
       'then the server answers 400 and closes', () async {
     final reply = await send(
