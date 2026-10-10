@@ -1,19 +1,16 @@
-import 'dart:typed_data';
-
 import 'header_name.dart';
 import 'map_header_store.dart';
 
 /// Read access to the header fields of a message.
 ///
 /// A base class, not an interface: implementers extend it and provide the
-/// four abstract members. Everything else has a default, so members can be
+/// two abstract members. Everything else has a default, so members can be
 /// added here later without breaking a store in another package. Override
 /// a default when the store can do better, for example [value] on a store
 /// that already caches its first value.
 ///
 /// Names are matched case-insensitively through [HeaderName]. Values are
-/// text. A store that holds the wire bytes returns them from [rawValue], so
-/// a typed header can parse without a `String` in between.
+/// text.
 abstract base class HeaderStore {
   const HeaderStore();
 
@@ -25,17 +22,6 @@ abstract base class HeaderStore {
   /// The same object comes back for the same name while the store is not
   /// modified, so a caller may cache by identity.
   Iterable<String> values(final HeaderName name);
-
-  /// The wire bytes of the first value for [name], or null when the store
-  /// has no bytes for it. Absence of bytes says nothing about [value].
-  ///
-  /// The view is only valid while the store is alive. Copy it, or call
-  /// [detach], to keep it longer.
-  Uint8List? rawValue(final HeaderName name);
-
-  /// A copy of this store in memory that outlives the exchange it came
-  /// from. Returns this store when it is already such a copy.
-  HeaderStore detach();
 
   /// The number of name and value pairs.
   int get fieldCount {
@@ -104,9 +90,6 @@ abstract base class MutableHeaderStore extends HeaderStore {
   void remove(final HeaderName name);
 
   void clear();
-
-  @override
-  MutableHeaderStore detach() => this;
 
   /// Throws [FormatException] when [value] carries CR, LF or NUL.
   static void checkValue(final HeaderName name, final String value) {

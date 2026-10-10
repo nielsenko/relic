@@ -146,11 +146,9 @@ final class HeaderName {
 }
 
 abstract base class HeaderStore {
-  // The four abstract members.
+  // The two abstract members.
   Iterable<HeaderName> get names;
   Iterable<String> values(HeaderName name);
-  Uint8List? rawValue(HeaderName name);    // the wire bytes, when the store has them
-  HeaderStore detach();                    // a copy that outlives the exchange
   // Defaults, overridable: fieldCount, value, contains, isEmpty, isNotEmpty,
   // forEach, newMutable, toMutable.
 }
@@ -166,7 +164,7 @@ abstract base class MutableHeaderStore extends HeaderStore {
 final class MapHeaderStore extends MutableHeaderStore { ... }
 ```
 
-A base class with four abstract members, not an interface: the package can
+A base class with two abstract members, not an interface: the package can
 grow a method without breaking a store in another package.
 
 `ByteHeaderStore` is in `relic_core`, not published as a stability
@@ -209,8 +207,9 @@ final class MutableHeaders extends MutableHeaderStore with AccessorStateMixin, _
 - Both classes delegate to an inner store and share the read path through
   one private base mixin on `HeaderStore`, so the byte-decode fast path has
   one copy.
-- `call` takes the wire bytes from `rawValue` when the codec has a byte
-  decoder, else the first value for a single-value codec, else the list.
+- `call` takes the wire bytes from a `ByteHeaderStore` when the codec has
+  a byte decoder, else the first value for a single-value codec, else the
+  list.
   Decoded values are cached per instance, keyed by accessor and raw value.
   `assign` primes the cache with the value it encoded.
 - The named getters and setters (`headers.contentLength`, `mh.date = ...`)

@@ -95,9 +95,10 @@ final class ByteHeaderStore extends HeaderStore {
     return false;
   }
 
+  /// The wire bytes of the first value for [name], or null when [name] is
+  /// absent, so a typed header can parse without a `String` in between.
   /// The same view comes back for the same field, so a caller may cache by
   /// identity.
-  @override
   Uint8List? rawValue(final HeaderName name) {
     for (var i = 0; i < fieldCount; i++) {
       if (_nameAt(i) == name) {
@@ -113,9 +114,6 @@ final class ByteHeaderStore extends HeaderStore {
     }
     return null;
   }
-
-  @override
-  HeaderStore detach() => this;
 
   HeaderName _nameAt(final int i) {
     if (_fieldNames[i] case final name?) return name;

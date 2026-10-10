@@ -1,13 +1,10 @@
-import 'dart:typed_data';
-
 import 'header_name.dart';
 import 'header_store.dart';
 
 /// The reference [MutableHeaderStore]: a map from name to values.
 ///
 /// This is what a response is built in, and what any package uses that
-/// wants a header map and nothing more. Values are text only, so
-/// [rawValue] is always null.
+/// wants a header map and nothing more.
 final class MapHeaderStore extends MutableHeaderStore {
   final _fields = <HeaderName, List<String>>{};
 
@@ -31,9 +28,6 @@ final class MapHeaderStore extends MutableHeaderStore {
 
   @override
   bool contains(final HeaderName name) => _fields.containsKey(name);
-
-  @override
-  Uint8List? rawValue(final HeaderName name) => null;
 
   @override
   int get fieldCount {

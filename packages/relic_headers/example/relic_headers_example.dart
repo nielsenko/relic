@@ -28,7 +28,7 @@ void describe(final HeaderStore store) {
   store.forEach((final name, final value) => print('$name: $value'));
 }
 
-/// A store over something that is not a map, to show the four members an
+/// A store over something that is not a map, to show the two members an
 /// implementer provides.
 final class _FixedStore extends HeaderStore {
   @override
@@ -37,10 +37,4 @@ final class _FixedStore extends HeaderStore {
   @override
   Iterable<String> values(final HeaderName name) =>
       name == HeaderName.server ? const ['fixed/1.0'] : const [];
-
-  @override
-  Uint8List? rawValue(final HeaderName name) => null;
-
-  @override
-  HeaderStore detach() => this;
 }

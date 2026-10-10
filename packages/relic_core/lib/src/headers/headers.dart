@@ -1,5 +1,3 @@
-import 'dart:typed_data';
-
 import '../../relic_core.dart';
 
 part 'mutable_headers.dart';
@@ -105,12 +103,6 @@ final class Headers extends HeaderStore
     final mutable = MutableHeaders._(_store.toMutable())..adoptCache(this);
     update(mutable);
     return Headers._(mutable._store)..adoptCache(mutable);
-  }
-
-  @override
-  HeaderStore detach() {
-    final detached = _store.detach();
-    return identical(detached, _store) ? this : Headers._(detached);
   }
 
   @override
@@ -597,9 +589,6 @@ base mixin _StoreReads on HeaderStore, HeaderValues {
   int get fieldCount => _store.fieldCount;
 
   @override
-  Uint8List? rawValue(final HeaderName name) => _store.rawValue(name);
-
-  @override
   void forEach(final void Function(HeaderName name, String value) visit) =>
       _store.forEach(visit);
 
@@ -622,15 +611,16 @@ base mixin _StoreReads on HeaderStore, HeaderValues {
   Iterable<String>? operator [](final Object key) => _lookupAny(this, key);
 
   /// Decodes from the wire bytes when the accessor's codec can and the store
-  /// has them, else from the text.
+  /// is a [ByteHeaderStore], else from the text.
   @override
   T? call<T extends Object>(
     final ReadOnlyAccessor<T, HeaderName, Iterable<String>> accessor,
   ) {
     if (accessor is HeaderAccessor<T>) {
       final codec = accessor.codec;
-      if (codec.decodeBytes != null) {
-        final bytes = _store.rawValue(accessor.key);
+      final store = _store;
+      if (codec.decodeBytes != null && store is ByteHeaderStore) {
+        final bytes = store.rawValue(accessor.key);
         if (bytes != null) {
           final value = decodeCached<Object>(
             accessor,

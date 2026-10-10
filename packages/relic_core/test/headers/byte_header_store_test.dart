@@ -105,10 +105,6 @@ void main() {
       );
     });
 
-    test('when detach is called, then the store is returned as is', () {
-      expect(store.detach(), same(store));
-    });
-
     test('when newMutable is called, then a MapHeaderStore is returned', () {
       expect(store.newMutable(), isA<MapHeaderStore>());
     });

@@ -44,10 +44,6 @@ void main() {
       expect(store.contains(HeaderName.accept), isFalse);
     });
 
-    test('when rawValue is read, then there are no bytes', () {
-      expect(store.rawValue(HeaderName.host), isNull);
-    });
-
     test('when forEach visits, then every pair is visited in order', () {
       final seen = <String>[];
       store.forEach((final name, final value) => seen.add('$name=$value'));
@@ -105,10 +101,6 @@ void main() {
         expect(fresh.names, isEmpty);
       },
     );
-
-    test('when detach is called, then the store is returned as is', () {
-      expect(store.detach(), same(store));
-    });
 
     test('when the values list is modified, then it throws', () {
       expect(
