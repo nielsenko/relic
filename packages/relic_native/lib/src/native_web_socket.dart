@@ -38,122 +38,28 @@ enum _WsKind {
 /// connection ends. Pings go out every [pingInterval] when one is set,
 /// and a peer that has not answered one before the next is due is gone:
 /// the socket closes with 1001.
-final class NativeWebSocket implements RelicWebSocket {
+final class NativeWebSocket extends RelicWebSocketBase {
   final NativeExchange _exchange;
-  final _events = StreamController<WebSocketEvent>();
-  final _done = Completer<void>();
-  Timer? _pingTimer;
-  Duration? _pingInterval;
 
   /// The pongs counted when the last ping went out. The same count when
   /// the next is due means the peer never answered.
   int? _pongsAtPing;
-  var _closeSent = false;
 
   NativeWebSocket._(this._exchange);
 
   @override
-  Future<void> get done => _done.future;
+  void sendFrame(final WebSocketOpcode opcode, final Uint8List payload) =>
+      _exchange._wsSend(opcode, payload);
 
   @override
-  Stream<WebSocketEvent> get events => _events.stream;
+  void onPing() => _pongsAtPing = _exchange._wsPongs;
 
+  /// The native side counts the pongs, so a ping is answered when the
+  /// count moved since it went out.
   @override
-  bool get isClosed => _events.isClosed;
-
-  @override
-  String get protocol => '';
-
-  @override
-  Duration? get pingInterval => _pingInterval;
-
-  @override
-  set pingInterval(final Duration? value) {
-    _pingInterval = value;
-    _pingTimer?.cancel();
-    _pingTimer = null;
-    _pongsAtPing = null;
-    if (value == null || _closeSent) return;
-    _pingTimer = Timer.periodic(value, (_) {
-      final pongs = _exchange._wsPongs;
-      if (pongs == null) return;
-      if (pongs == _pongsAtPing) {
-        _goAway(1001, '');
-        return;
-      }
-      _pongsAtPing = pongs;
-      _exchange._wsSend(WebSocketOpcode.ping, Uint8List(0));
-    });
-  }
-
-  @override
-  void sendBytes(final Uint8List b) {
-    if (!trySendBytes(b)) throw WebSocketConnectionClosed();
-  }
-
-  @override
-  void sendText(final String s) {
-    if (!trySendText(s)) throw WebSocketConnectionClosed();
-  }
-
-  @override
-  bool trySendBytes(final Uint8List b) {
-    if (isClosed) return false;
-    _exchange._wsSend(WebSocketOpcode.binary, b);
-    return true;
-  }
-
-  @override
-  bool trySendText(final String s) {
-    if (isClosed) return false;
-    _exchange._wsSend(WebSocketOpcode.text, utf8.encode(s));
-    return true;
-  }
-
-  @override
-  Future<void> close([final int? code, final String? reason]) async {
-    if (!await tryClose(code, reason)) throw WebSocketConnectionClosed();
-  }
-
-  @override
-  Future<bool> tryClose([final int? code, final String? reason]) async {
-    if (isClosed) return false;
-    checkCloseCode(code);
-    checkCloseReason(reason);
-    _closeEvents();
-    _sendClose(code, reason ?? '');
-    return true;
-  }
-
-  @override
-  Future<void> closeGoingAway() {
-    if (!isClosed) {
-      _closeEvents();
-      _sendClose(1001, 'Server shutting down');
-    }
-    return _done.future;
-  }
-
-  /// Closes from this side with [code], and the handler sees that close.
-  void _goAway(final int code, final String reason) {
-    _closeEvents(CloseReceived(code, reason));
-    _sendClose(code, reason);
-  }
-
-  void _sendClose(final int? code, final String reason) {
-    if (_closeSent) return;
-    _closeSent = true;
-    _pingTimer?.cancel();
-    _pingTimer = null;
-    _exchange._wsSend(WebSocketOpcode.close, encodeClosePayload(code, reason));
-  }
-
-  /// Ends the handler's events, after [close] when it should hear how the
-  /// connection closed. Nothing happens on events that already ended.
-  void _closeEvents([final CloseReceived? close]) {
-    if (_events.isClosed) return;
-    if (close != null) _events.add(close);
-    unawaited(_events.close());
+  bool pingAnswered() {
+    final pongs = _exchange._wsPongs;
+    return pongs == null || pongs != _pongsAtPing;
   }
 
   /// A message from the native side. [bytes] is a view of memory that is
@@ -161,36 +67,28 @@ final class NativeWebSocket implements RelicWebSocket {
   void _onMessage(final _WsKind kind, final Uint8List bytes) {
     switch (kind) {
       case _WsKind.text:
-        if (!_events.isClosed) {
-          _events.add(TextDataReceived(utf8.decode(bytes)));
-        }
+        addEvent(TextDataReceived(utf8.decode(bytes)));
       case _WsKind.binary:
-        if (!_events.isClosed) {
-          _events.add(BinaryDataReceived(Uint8List.fromList(bytes)));
-        }
+        addEvent(BinaryDataReceived(Uint8List.fromList(bytes)));
       case _WsKind.close:
-        _closeSent = true;
-        _pingTimer?.cancel();
+        markCloseSent();
         final code = bytes.length >= 2 ? (bytes[0] << 8) | bytes[1] : 1005;
         final reason = bytes.length > 2 ? utf8.decode(bytes.sublist(2)) : '';
-        _closeEvents(CloseReceived(code, reason));
+        closeEvents(CloseReceived(code, reason));
       case _WsKind.failed:
-        _closeSent = true;
-        _pingTimer?.cancel();
+        markCloseSent();
         final code = (bytes[0] << 8) | bytes[1];
         final reason = utf8.decode(bytes.sublist(2));
-        if (!_events.isClosed) _events.addError(WebSocketException(reason));
-        _closeEvents(CloseReceived(code, reason));
+        addError(WebSocketException(reason));
+        closeEvents(CloseReceived(code, reason));
       case _WsKind.dropped:
-        _closeEvents(CloseReceived(1006, ''));
+        closeEvents(CloseReceived(1006, ''));
     }
   }
 
   /// The connection is gone, however it went.
   void _gone() {
-    _pingTimer?.cancel();
-    _pingTimer = null;
-    _closeEvents(CloseReceived(1006, ''));
-    if (!_done.isCompleted) _done.complete();
+    closeEvents(CloseReceived(1006, ''));
+    completeDone();
   }
 }
