@@ -206,6 +206,10 @@ final class NativeAdapter implements Adapter {
   var _inDrain = false;
   var _drainAgain = false;
 
+  /// Set by a close called from inside the drain, which the drain
+  /// completes on its way out.
+  Completer<void>? _drainReturned;
+
   /// A tick is due: something was handed to the native side that the
   /// reactor acts on at its next pass. From inside the drain, a sync
   /// handler answering for one, the drain itself takes it on its next
@@ -269,6 +273,7 @@ final class NativeAdapter implements Adapter {
     } finally {
       _inDrain = false;
       releaseHttpDate();
+      _settle(_drainReturned);
     }
     _scheduleDrain();
   }
@@ -347,6 +352,12 @@ final class NativeAdapter implements Adapter {
   Future<void> close({final bool force = false}) async {
     if (_closing) return _closedFuture.future;
     _closing = true;
+    if (_inDrain) {
+      // A handler is closing its own server. The drain's batch still
+      // reads the buffers and ticks the reactor that are freed below.
+      final returned = _drainReturned = Completer<void>();
+      await returned.future;
+    }
     if (!force) {
       if (_inFlight.isNotEmpty) {
         final drained = _drained = Completer<void>();
