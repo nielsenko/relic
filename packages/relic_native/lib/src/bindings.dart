@@ -101,6 +101,16 @@ final class ExchangeView extends Struct {
   external int scratchCap;
   @Uint32()
   external int respInlineLen;
+
+  /// The connection is a WebSocket.
+  @Uint8()
+  external int upgraded;
+  @Uint32()
+  external int wsMaxMessage;
+
+  /// Pong frames the native side has received.
+  @Uint32()
+  external int wsPongs;
 }
 
 /// Mirrors `Stats` in src/relic_native.zig.
@@ -271,6 +281,48 @@ external void watch(Pointer<ExchangeView> view);
   isLeaf: true,
 )
 external void hijack(Pointer<ExchangeView> view);
+
+/// Answers with the 101 [head] and makes the connection a WebSocket. A
+/// message over [maxMessage] bytes closes it with 1009.
+@Native<Void Function(Pointer<ExchangeView>, Pointer<Uint8>, Uint32, Uint32)>(
+  symbol: 'relic_ws_upgrade',
+  isLeaf: true,
+)
+external void wsUpgrade(
+  Pointer<ExchangeView> view,
+  Pointer<Uint8> head,
+  int headLen,
+  int maxMessage,
+);
+
+/// Queues a frame for the peer, with [data] as its payload. False when
+/// the node could not be allocated, and [data] is then still Dart's.
+@Native<Bool Function(Pointer<ExchangeView>, Pointer<Uint8>, Size, Uint8)>(
+  symbol: 'relic_ws_send',
+  isLeaf: true,
+)
+external bool wsSend(
+  Pointer<ExchangeView> view,
+  Pointer<Uint8> data,
+  int length,
+  int opcode,
+);
+
+/// Takes the next message from the peer. Returns 0 when none is queued.
+@Native<
+  Uint8 Function(
+    Pointer<ExchangeView>,
+    Pointer<Pointer<Uint8>>,
+    Pointer<Size>,
+    Pointer<Uint8>,
+  )
+>(symbol: 'relic_ws_read', isLeaf: true)
+external int wsRead(
+  Pointer<ExchangeView> view,
+  Pointer<Pointer<Uint8>> data,
+  Pointer<Size> length,
+  Pointer<Uint8> kind,
+);
 
 @Native<Pointer<Uint8> Function(Size)>(symbol: 'relic_alloc', isLeaf: true)
 external Pointer<Uint8> alloc(int length);

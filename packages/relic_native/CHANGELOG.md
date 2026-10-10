@@ -9,8 +9,11 @@
 - A head that is not CRLF framed, has a field line without a colon, a
   folded line, a field name that is not a token or a control character
   other than a tab in a value is answered 400
-- `hijack` hands the connection over as a raw byte channel, and WebSocket
-  upgrades run on it with relic_core's framer
+- `hijack` hands the connection over as a raw byte channel
+- WebSocket upgrades are framed on the native side: the connection's task
+  unmasks, assembles and checks the peer's frames and writes the server's,
+  `capabilities.webSocket` is true, and `maxWebSocketMessage` bounds a
+  message
 - The reactor runs on the isolate's own thread. `bind` and `serveNative`
   take no `executors`, and `queueCapacity` is `reactorCapacity`
 - A request builds one `Uri` from its target and validates that, and a

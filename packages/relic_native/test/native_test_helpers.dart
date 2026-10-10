@@ -15,6 +15,7 @@ Future<RelicServer> serveNative(
   final Duration headerTimeout = const Duration(seconds: 10),
   final Duration bodyTimeout = const Duration(seconds: 30),
   final Duration writeTimeout = const Duration(seconds: 30),
+  final int maxWebSocketMessage = FramedWebSocket.defaultMaxMessageSize,
 }) async {
   final server = RelicServer(
     () => NativeAdapter.bind(
@@ -25,6 +26,7 @@ Future<RelicServer> serveNative(
       headerTimeout: headerTimeout,
       bodyTimeout: bodyTimeout,
       writeTimeout: writeTimeout,
+      maxWebSocketMessage: maxWebSocketMessage,
     ),
   );
   await server.mountAndStart(handler);

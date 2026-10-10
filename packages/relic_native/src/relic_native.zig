@@ -29,6 +29,10 @@
 //! buffer streams back through the outbound chunk queue, chunked on the
 //! wire when its length is unknown.
 //!
+//! A connection Dart upgrades to a WebSocket stays with its task, which
+//! frames, unmasks and checks on this thread. Dart sends and receives
+//! whole messages through the same two queues.
+//!
 //! While Dart has nothing to do it parks a waiter thread on the loop's
 //! host handle, which wakes it with one port message when the loop has
 //! events or a timer is due. Under load the isolate never gets there.
@@ -51,6 +55,14 @@ const in_credit = 4;
 /// A body the handler answered without reading is drained up to this
 /// many bytes so the connection can be reused, or closed beyond it.
 const max_discard = 4 << 20;
+/// The payload a WebSocket control frame may carry (RFC 6455 5.5).
+const ws_control_max = 125;
+/// How long a close frame this side sent waits for the peer's answer
+/// before the connection ends anyway.
+const ws_close_wait_ms = 2000;
+/// How long a WebSocket frame about to die waits for Dart to take the
+/// messages still queued for it, the peer's close among them.
+const ws_drain_wait_ms = 1000;
 
 /// What the waiter's pipe, pokeAcceptor and the tests need from libc.
 /// Zig keeps sockets behind std.Io, and the reactor's thread cannot use
@@ -146,6 +158,13 @@ pub const ExchangeView = extern struct {
     scratch_cap: u32 = 0,
     /// The bytes of a response Dart wrote into `scratch`, or 0.
     resp_inline_len: u32 = 0,
+    /// Dart made the connection a WebSocket with relic_ws_upgrade.
+    upgraded: u8 = 0,
+    /// A WebSocket message over this many bytes closes the connection
+    /// with 1009.
+    ws_max_message: u32 = 0,
+    /// Pong frames received, for Dart's ping timer.
+    ws_pongs: u32 = 0,
 };
 
 pub const Stats = extern struct {
@@ -242,6 +261,9 @@ const Chunk = struct {
     /// consumer drops the connection instead of finishing the message.
     last: bool = false,
     ok: bool = true,
+    /// On a WebSocket: a `WsKind` inbound, a `WsOpcode` outbound. 0 for
+    /// a body chunk.
+    kind: u8 = 0,
 };
 
 /// An accepted socket on its way from the acceptor thread to a reactor.
@@ -272,6 +294,12 @@ const Exchange = struct {
     /// Dart closed the sink of a hijacked connection. From then on the
     /// only event Dart gets is the last one, once the connection is gone.
     sink_closed: bool = false,
+    /// The peer has nothing more to say on a WebSocket: its close frame
+    /// arrived, the connection ended, or it broke the protocol.
+    peer_close: zio.Event = .init,
+    /// A close frame is queued or written on a WebSocket. No message is
+    /// handed to Dart or echoed after it.
+    ws_close_sent: bool = false,
 
     fn init(self: *Exchange, reactor: *Reactor, view: ExchangeView) void {
         self.* = .{ .view = view, .reactor = reactor };
@@ -847,6 +875,14 @@ fn handleConnInner(r: *Reactor, stream: zio.net.Stream) !void {
             if (v.resp_body) |p| std.c.free(p);
             freeChunks(&ex.in);
         }
+        if (v.upgraded != 0) {
+            if (pump) |*p| p.cancel();
+            pump = null;
+            if (v.resp_head) |p| try w.writeAll(p[0..v.resp_head_len]);
+            try w.flush();
+            pumpWebSocket(&reader, w, &ex);
+            return;
+        }
         if (v.hijacked != 0) {
             // The raw reader takes the socket over from the pump.
             if (pump) |*p| p.cancel();
@@ -1092,6 +1128,335 @@ fn rawWriter(w: *std.Io.Writer, ex: *Exchange) void {
             .ready => ex.out_ready.reset(),
         }
     }
+}
+
+// WebSocket (RFC 6455) after relic_ws_upgrade. The connection's task
+// frames, unmasks and checks on this thread, and Dart sends and receives
+// messages through the chunk queues.
+
+const WsOpcode = enum(u4) {
+    continuation = 0,
+    text = 1,
+    binary = 2,
+    close = 8,
+    ping = 9,
+    pong = 10,
+    _,
+
+    fn isControl(self: WsOpcode) bool {
+        return @backingInt(self) >= 8;
+    }
+};
+
+/// What a chunk Dart takes with relic_ws_read is. Mirrored by `_WsKind`
+/// in lib/src/native_web_socket.dart.
+const WsKind = enum(u8) {
+    text = 1,
+    binary = 2,
+    /// The peer's close frame, echoed already: two bytes of code and the
+    /// reason, or nothing when it carried no code.
+    close = 3,
+    /// The peer broke the protocol and was sent a close frame: its code
+    /// and reason.
+    failed = 4,
+    /// The connection ended without a close frame.
+    dropped = 5,
+};
+
+const FrameHead = struct {
+    fin: bool,
+    opcode: WsOpcode,
+    len: u64,
+    mask: [4]u8,
+};
+
+/// A frame the peer should not have sent, and the close code it is
+/// answered with: 1002 for a protocol error, 1009 for one too big.
+const WsViolation = struct { code: u16, reason: []const u8 };
+
+const FrameHeadResult = union(enum) { head: FrameHead, violation: WsViolation };
+
+fn violation(code: u16, reason: []const u8) FrameHeadResult {
+    return .{ .violation = .{ .code = code, .reason = reason } };
+}
+
+/// Reads a frame head as a server reads a client's (RFC 6455 5.2): no
+/// reserved bit, a known opcode, a mask, a control frame in one piece of
+/// at most 125 bytes, a continuation only inside a message and a new
+/// message only outside one, and a payload within `max`.
+fn readFrameHead(rd: *std.Io.Reader, in_message: bool, max: u64) std.Io.Reader.Error!FrameHeadResult {
+    const first = try rd.takeArray(2);
+    const b0 = first[0];
+    const b1 = first[1];
+    if (b0 & 0x70 != 0) return violation(1002, "Reserved bits set");
+    const fin = b0 & 0x80 != 0;
+    const opcode: WsOpcode = @fromBackingInt(@intCast(@as(u4, @truncate(b0))));
+    switch (opcode) {
+        .continuation => if (!in_message) return violation(1002, "A continuation frame with no message to continue"),
+        .text, .binary => if (in_message) return violation(1002, "A new message while one is still being fragmented"),
+        .close, .ping, .pong => if (!fin) return violation(1002, "A control frame cannot be fragmented"),
+        _ => return violation(1002, "Unknown opcode"),
+    }
+    if (b1 & 0x80 == 0) return violation(1002, "A client frame must be masked");
+    var len: u64 = b1 & 0x7f;
+    if (len >= 126) {
+        if (opcode.isControl()) return violation(1002, "A control frame payload is at most 125 bytes");
+        if (len == 126) {
+            len = std.mem.readInt(u16, try rd.takeArray(2), .big);
+        } else {
+            const bytes = try rd.takeArray(8);
+            if (bytes[0] & 0x80 != 0) return violation(1002, "The most significant bit of a 64-bit length must be 0");
+            len = std.mem.readInt(u64, bytes, .big);
+        }
+    }
+    if (len > max) return violation(1009, "Frame too big");
+    return .{ .head = .{ .fin = fin, .opcode = opcode, .len = len, .mask = (try rd.takeArray(4)).* } };
+}
+
+/// XORs `data` with `mask`, repeated, sixteen bytes at a time.
+fn unmask(data: []u8, mask: [4]u8) void {
+    const Bytes16 = @Vector(16, u8);
+    var pattern: [16]u8 = undefined;
+    inline for (0..4) |k| pattern[k * 4 ..][0..4].* = mask;
+    const repeated: Bytes16 = pattern;
+    var i: usize = 0;
+    while (i + 16 <= data.len) : (i += 16) {
+        const block: Bytes16 = data[i..][0..16].*;
+        data[i..][0..16].* = block ^ repeated;
+    }
+    for (data[i..], i..) |*b, k| b.* ^= mask[k & 3];
+}
+
+/// Writes a server frame: never masked (RFC 6455 5.1), the length in the
+/// fewest bytes that hold it.
+fn writeFrame(w: *std.Io.Writer, opcode: WsOpcode, payload: []const u8) !void {
+    var head: [10]u8 = undefined;
+    head[0] = 0x80 | @as(u8, @backingInt(opcode));
+    var n: usize = 2;
+    if (payload.len < 126) {
+        head[1] = @intCast(payload.len);
+    } else if (payload.len <= 0xffff) {
+        head[1] = 126;
+        std.mem.writeInt(u16, head[2..4], @intCast(payload.len), .big);
+        n = 4;
+    } else {
+        head[1] = 127;
+        std.mem.writeInt(u64, head[2..10], payload.len, .big);
+        n = 10;
+    }
+    try w.writeAll(head[0..n]);
+    try w.writeAll(payload);
+}
+
+/// Close codes a peer may send (RFC 6455 7.4 and the IANA registry).
+/// 1004 is not defined, and 1005, 1006 and 1015 are for local use.
+fn isValidCloseCode(code: u16) bool {
+    return (code >= 1000 and code <= 1003) or (code >= 1007 and code <= 1014) or (code >= 3000 and code <= 4999);
+}
+
+/// A WebSocket connection: a reader task and a writer task between the
+/// socket and Dart's chunk queues, until the close handshake is over,
+/// the peer is gone, or Dart aborts. The socket closes when this returns.
+fn pumpWebSocket(reader: *zio.net.Stream.Reader, w: *std.Io.Writer, ex: *Exchange) void {
+    reader.setTimeout(.none);
+    var rd = zio.spawn(wsReader, .{ reader, ex }) catch return;
+    var wr = zio.spawn(wsWriter, .{ w, ex }) catch {
+        rd.cancel();
+        return;
+    };
+    ex.closed.wait() catch {};
+    rd.cancel();
+    wr.cancel();
+    freeChunks(&ex.out);
+    // Dart takes what is queued for it at its next tick, the close among
+    // it. The frame holds on for that, unless Dart let go already.
+    var rounds: u32 = 0;
+    while (ex.view.aborted == 0 and !ex.in.isEmpty() and rounds < 10) : (rounds += 1) {
+        ex.credit.waitTimeout(.fromMilliseconds(ws_drain_wait_ms / 10)) catch |err| {
+            if (err == error.Canceled) break;
+        };
+        ex.credit.reset();
+    }
+    postLastEvent(ex);
+}
+
+/// Reads the peer's frames: answers pings, counts pongs, assembles
+/// messages, checks text, and hands each message to Dart. Stops at the
+/// peer's close frame, which it echoes, at the end of the connection, or
+/// at a violation, which it answers with a close frame. The writer learns
+/// through `peer_close` that nothing more comes.
+fn wsReader(reader: *zio.net.Stream.Reader, ex: *Exchange) void {
+    defer ex.peer_close.set();
+    const rd = &reader.interface;
+    // Plain malloc for a byte list, so Dart frees a message with relic_free.
+    const gpa = std.heap.c_allocator;
+    var message: std.ArrayListUnmanaged(u8) = .empty;
+    defer message.deinit(gpa);
+    var message_opcode: ?WsOpcode = null;
+    const max: u64 = ex.view.ws_max_message;
+    while (true) {
+        const result = readFrameHead(rd, message_opcode != null, max) catch return wsReadEnded(reader, ex);
+        const head = switch (result) {
+            .head => |h| h,
+            .violation => |v| return wsFail(ex, v.code, v.reason),
+        };
+        if (head.opcode.isControl()) {
+            var buf: [ws_control_max]u8 = undefined;
+            const payload = buf[0..@intCast(head.len)];
+            rd.readSliceAll(payload) catch return wsReadEnded(reader, ex);
+            unmask(payload, head.mask);
+            switch (head.opcode) {
+                .ping => if (!ex.ws_close_sent) pushOutbound(ex, .pong, payload),
+                .pong => ex.view.ws_pongs +%= 1,
+                .close => return wsPeerClose(ex, payload),
+                else => unreachable,
+            }
+            continue;
+        }
+        if (message.items.len + head.len > max) return wsFail(ex, 1009, "Message too big");
+        const opcode = message_opcode orelse head.opcode;
+        message_opcode = opcode;
+        const len: usize = @intCast(head.len);
+        message.ensureUnusedCapacity(gpa, len) catch return wsFail(ex, 1011, "Out of memory");
+        const slot = message.unusedCapacitySlice()[0..len];
+        rd.readSliceAll(slot) catch return wsReadEnded(reader, ex);
+        unmask(slot, head.mask);
+        message.items.len += len;
+        if (!head.fin) continue;
+        message_opcode = null;
+        if (opcode == .text and !std.unicode.utf8ValidateSlice(message.items)) return wsFail(ex, 1007, "Text is not valid UTF-8");
+        if (ex.ws_close_sent) {
+            message.clearRetainingCapacity();
+            continue;
+        }
+        if (!waitCredit(ex, &ex.closed)) return;
+        const kind: WsKind = if (opcode == .text) .text else .binary;
+        if (message.items.len == 0) {
+            pushWsInbound(ex, kind, null, 0);
+            continue;
+        }
+        const owned = message.toOwnedSlice(gpa) catch return wsFail(ex, 1011, "Out of memory");
+        pushWsInbound(ex, kind, owned.ptr, owned.len);
+    }
+}
+
+/// The connection ended, or the read was cancelled, inside a frame.
+fn wsReadEnded(reader: *zio.net.Stream.Reader, ex: *Exchange) void {
+    if (reader.err) |e| if (e == error.Canceled) return;
+    wsDropped(ex);
+}
+
+/// The connection ended without a close frame. Dart hears 1006, unless a
+/// close of this side's was on its way, and the connection ends.
+fn wsDropped(ex: *Exchange) void {
+    if (!ex.ws_close_sent) pushWsInbound(ex, .dropped, null, 0);
+    ex.closed.set();
+}
+
+/// The peer's close frame. A code is two bytes and one the peer may send,
+/// and a reason is UTF-8. The code goes back in a close frame, and Dart
+/// gets the code and the reason.
+fn wsPeerClose(ex: *Exchange, payload: []const u8) void {
+    if (payload.len == 1) return wsFail(ex, 1002, "A close code is two bytes");
+    if (payload.len >= 2) {
+        const code = std.mem.readInt(u16, payload[0..2], .big);
+        if (!isValidCloseCode(code)) {
+            var buf: [32]u8 = undefined;
+            const reason: []const u8 = std.fmt.bufPrint(&buf, "Close code {d}", .{code}) catch "Close code";
+            return wsFail(ex, 1002, reason);
+        }
+        if (!std.unicode.utf8ValidateSlice(payload[2..])) return wsFail(ex, 1007, "Close reason is not valid UTF-8");
+    }
+    // Either the peer answered this side's close, or it closes first and
+    // gets its code back.
+    if (ex.ws_close_sent) return;
+    ex.ws_close_sent = true;
+    pushOutbound(ex, .close, payload[0..@min(payload.len, 2)]);
+    pushWsInboundCopy(ex, .close, payload);
+}
+
+/// Answers a violation with a close frame carrying `code`, tells Dart,
+/// and stops reading: the peer's answer is not waited for.
+fn wsFail(ex: *Exchange, code: u16, reason: []const u8) void {
+    if (ex.ws_close_sent) return;
+    ex.ws_close_sent = true;
+    var payload: [2 + ws_control_max]u8 = undefined;
+    std.mem.writeInt(u16, payload[0..2], code, .big);
+    const n = @min(reason.len, ws_control_max - 2);
+    @memcpy(payload[2 .. 2 + n], reason[0..n]);
+    pushOutbound(ex, .close, payload[0 .. 2 + n]);
+    pushWsInboundCopy(ex, .failed, payload[0 .. 2 + n]);
+}
+
+/// Queues a frame for the writer, with its own copy of `payload`.
+fn pushOutbound(ex: *Exchange, opcode: WsOpcode, payload: []const u8) void {
+    const chunk = std.heap.c_allocator.create(Chunk) catch return;
+    var ptr: ?[*]u8 = null;
+    if (payload.len > 0) {
+        const buf = std.c.malloc(payload.len) orelse {
+            std.heap.c_allocator.destroy(chunk);
+            return;
+        };
+        const data: [*]u8 = @ptrCast(buf);
+        @memcpy(data[0..payload.len], payload);
+        ptr = data;
+    }
+    chunk.* = .{ .ptr = ptr, .len = payload.len, .kind = @backingInt(opcode) };
+    ex.out.push(&chunk.node);
+    ex.out_ready.set();
+}
+
+/// Hands Dart a message it frees with relic_free, or an empty one.
+fn pushWsInbound(ex: *Exchange, kind: WsKind, ptr: ?[*]u8, len: usize) void {
+    const chunk = std.heap.c_allocator.create(Chunk) catch {
+        if (ptr) |p| std.c.free(p);
+        return;
+    };
+    chunk.* = .{ .ptr = ptr, .len = len, .kind = @backingInt(kind) };
+    pushInbound(ex, chunk);
+}
+
+fn pushWsInboundCopy(ex: *Exchange, kind: WsKind, payload: []const u8) void {
+    if (payload.len == 0) return pushWsInbound(ex, kind, null, 0);
+    const buf = std.c.malloc(payload.len) orelse return;
+    const data: [*]u8 = @ptrCast(buf);
+    @memcpy(data[0..payload.len], payload);
+    pushWsInbound(ex, kind, data, payload.len);
+}
+
+/// Writes what is queued for the peer: Dart's messages and pings, the
+/// pongs, and a close frame, which is the last. After it the peer's own
+/// close frame is waited for, ws_close_wait_ms at most, and the
+/// connection ends.
+fn wsWriter(w: *std.Io.Writer, ex: *Exchange) void {
+    while (true) {
+        while (ex.out.pop()) |node| {
+            const chunk: *Chunk = @fieldParentPtr("node", node);
+            defer std.heap.c_allocator.destroy(chunk);
+            defer if (chunk.ptr) |p| std.c.free(p);
+            const payload: []const u8 = if (chunk.ptr) |p| p[0..chunk.len] else "";
+            const opcode: WsOpcode = @fromBackingInt(@intCast(@as(u4, @truncate(chunk.kind))));
+            writeFrame(w, opcode, payload) catch return wsWriteFailed(ex);
+            if (opcode != .close) continue;
+            w.flush() catch return wsWriteFailed(ex);
+            ex.peer_close.waitTimeout(.fromMilliseconds(ws_close_wait_ms)) catch {};
+            ex.closed.set();
+            return;
+        }
+        w.flush() catch return wsWriteFailed(ex);
+        const first = zio.select(.{ .ready = &ex.out_ready, .closed = &ex.closed }) catch return;
+        switch (first) {
+            .closed => return,
+            .ready => ex.out_ready.reset(),
+        }
+    }
+}
+
+/// A write failed: the peer stopped reading. The connection ends, and
+/// Dart hears 1006 at the last event.
+fn wsWriteFailed(ex: *Exchange) void {
+    ex.view.write_failed = 1;
+    ex.closed.set();
 }
 
 fn writeChunk(w: *std.Io.Writer, data: []const u8, chunked: bool) !void {
@@ -1802,6 +2167,50 @@ export fn relic_hijack(v: *ExchangeView) void {
     ex.done.set();
 }
 
+/// Answers with the 101 head Dart encoded, ownership of which passes to
+/// native, and makes the connection a WebSocket: the peer's messages come
+/// through relic_ws_read and frames go out through relic_ws_send. A
+/// message over `max_message` bytes closes the connection with 1009.
+export fn relic_ws_upgrade(v: *ExchangeView, head: [*]u8, head_len: u32, max_message: u32) void {
+    v.resp_head = head;
+    v.resp_head_len = head_len;
+    v.upgraded = 1;
+    v.ws_max_message = max_message;
+    const ex: *Exchange = @fieldParentPtr("view", v);
+    ex.done.set();
+}
+
+/// Queues a frame for the peer: `opcode` 1 for text, 2 for binary, 9 for
+/// a ping, 8 for a close with the code and reason as its payload, after
+/// which nothing else goes out. Ownership of `data` (malloc'd by Dart)
+/// passes to native. Returns false when the node could not be allocated,
+/// in which case `data` still belongs to Dart.
+export fn relic_ws_send(v: *ExchangeView, data: ?[*]u8, len: usize, opcode: u8) bool {
+    const ex: *Exchange = @fieldParentPtr("view", v);
+    const chunk = std.heap.c_allocator.create(Chunk) catch return false;
+    chunk.* = .{ .ptr = data, .len = len, .kind = opcode };
+    if (opcode == @backingInt(WsOpcode.close)) ex.ws_close_sent = true;
+    ex.out.push(&chunk.node);
+    ex.out_ready.set();
+    return true;
+}
+
+/// Takes the next message from the peer. Returns 0 when none is queued.
+/// `kind` is a `WsKind`, and `data` is freed with relic_free, or null for
+/// an empty payload.
+export fn relic_ws_read(v: *ExchangeView, data: *?[*]u8, len: *usize, kind: *u8) u8 {
+    const ex: *Exchange = @fieldParentPtr("view", v);
+    const node = ex.in.pop() orelse return 0;
+    const chunk: *Chunk = @fieldParentPtr("node", node);
+    defer std.heap.c_allocator.destroy(chunk);
+    data.* = chunk.ptr;
+    len.* = chunk.len;
+    kind.* = chunk.kind;
+    ex.in_pending -= 1;
+    ex.credit.set();
+    return 1;
+}
+
 export fn relic_alloc(len: usize) ?[*]u8 {
     const p = std.c.malloc(len) orelse return null;
     return @ptrCast(p);
@@ -2196,4 +2605,89 @@ test "fuzz: a seeded mutation sweep over the request corpus" {
         }
         try checkRequestBytes(buf[0..len]);
     }
+}
+
+test "ws: a frame head is read as a server reads a client's" {
+    var in: std.Io.Reader = .fixed(&.{ 0x81, 0x83, 1, 2, 3, 4, 'a', 'b', 'c' });
+    const head = (try readFrameHead(&in, false, 1 << 20)).head;
+    try std.testing.expect(head.fin);
+    try std.testing.expectEqual(WsOpcode.text, head.opcode);
+    try std.testing.expectEqual(@as(u64, 3), head.len);
+    try std.testing.expectEqual([4]u8{ 1, 2, 3, 4 }, head.mask);
+    // The payload is left for the caller.
+    try std.testing.expectEqual(@as(usize, 3), in.bufferedLen());
+
+    var two: std.Io.Reader = .fixed(&.{ 0x82, 0xfe, 0x01, 0x00, 0, 0, 0, 0 });
+    try std.testing.expectEqual(@as(u64, 256), (try readFrameHead(&two, false, 1 << 20)).head.len);
+    var eight: std.Io.Reader = .fixed(&.{ 0x82, 0xff, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0 });
+    try std.testing.expectEqual(@as(u64, 1 << 16), (try readFrameHead(&eight, false, 1 << 20)).head.len);
+
+    // What may continue a message, and what may interrupt one.
+    var cont: std.Io.Reader = .fixed(&.{ 0x80, 0x80, 0, 0, 0, 0 });
+    try std.testing.expectEqual(WsOpcode.continuation, (try readFrameHead(&cont, true, 1 << 20)).head.opcode);
+    var ping: std.Io.Reader = .fixed(&.{ 0x89, 0x80, 0, 0, 0, 0 });
+    try std.testing.expectEqual(WsOpcode.ping, (try readFrameHead(&ping, true, 1 << 20)).head.opcode);
+}
+
+test "ws: a frame the peer may not send is refused with its close code" {
+    const Case = struct { bytes: []const u8, in_message: bool = false, max: u64 = 1 << 20, code: u16 };
+    const cases = [_]Case{
+        .{ .bytes = &.{ 0x81, 0x01, 'a' }, .code = 1002 }, // unmasked
+        .{ .bytes = &.{ 0xc1, 0x80, 0, 0, 0, 0 }, .code = 1002 }, // RSV1
+        .{ .bytes = &.{ 0x83, 0x80, 0, 0, 0, 0 }, .code = 1002 }, // opcode 3
+        .{ .bytes = &.{ 0x09, 0x80, 0, 0, 0, 0 }, .code = 1002 }, // a fragmented ping
+        .{ .bytes = &.{ 0x89, 0xfe, 0, 126, 0, 0, 0, 0 }, .code = 1002 }, // a ping of 126 bytes
+        .{ .bytes = &.{ 0x80, 0x80, 0, 0, 0, 0 }, .code = 1002 }, // a continuation outside a message
+        .{ .bytes = &.{ 0x81, 0x80, 0, 0, 0, 0 }, .in_message = true, .code = 1002 }, // text inside one
+        .{ .bytes = &.{ 0x82, 0xff, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }, .code = 1002 }, // a 64-bit length with its top bit
+        .{ .bytes = &.{ 0x82, 0xfe, 0x10, 0x00, 0, 0, 0, 0 }, .max = 4095, .code = 1009 }, // 4096 over a limit of 4095
+    };
+    for (cases) |case| {
+        var in: std.Io.Reader = .fixed(case.bytes);
+        const result = try readFrameHead(&in, case.in_message, case.max);
+        try std.testing.expectEqual(case.code, result.violation.code);
+    }
+}
+
+test "ws: unmask reaches past the vector blocks into the tail" {
+    var data: [37]u8 = undefined;
+    for (&data, 0..) |*b, i| b.* = @intCast(i);
+    const mask = [4]u8{ 0xa5, 0x5a, 0x0f, 0xf0 };
+    unmask(&data, mask);
+    for (data, 0..) |b, i| try std.testing.expectEqual(@as(u8, @intCast(i)) ^ mask[i & 3], b);
+}
+
+test "ws: a server frame reads back through the client parser" {
+    const sizes = [_]usize{ 0, 125, 126, 65535, 65536 };
+    for (sizes) |size| {
+        const payload = try std.testing.allocator.alloc(u8, size);
+        defer std.testing.allocator.free(payload);
+        @memset(payload, 'x');
+        const buf = try std.testing.allocator.alloc(u8, size + 10);
+        defer std.testing.allocator.free(buf);
+        var out: std.Io.Writer = .fixed(buf);
+        try writeFrame(&out, .binary, payload);
+        const written = out.buffered();
+        const head_len = written.len - size;
+        try std.testing.expectEqual(@as(usize, if (size < 126) 2 else if (size <= 0xffff) 4 else 10), head_len);
+
+        // A client's copy of it: the mask bit set and a zero mask, which
+        // changes no payload byte.
+        const masked = try std.testing.allocator.alloc(u8, written.len + 4);
+        defer std.testing.allocator.free(masked);
+        @memcpy(masked[0..head_len], written[0..head_len]);
+        masked[1] |= 0x80;
+        @memset(masked[head_len .. head_len + 4], 0);
+        @memcpy(masked[head_len + 4 ..], written[head_len..]);
+        var in: std.Io.Reader = .fixed(masked);
+        const head = (try readFrameHead(&in, false, 1 << 20)).head;
+        try std.testing.expectEqual(WsOpcode.binary, head.opcode);
+        try std.testing.expectEqual(@as(u64, size), head.len);
+        try std.testing.expectEqual(size, in.bufferedLen());
+    }
+}
+
+test "ws: the close codes a peer may send" {
+    for ([_]u16{ 1000, 1001, 1003, 1007, 1011, 1014, 3000, 4999 }) |code| try std.testing.expect(isValidCloseCode(code));
+    for ([_]u16{ 0, 999, 1004, 1005, 1006, 1015, 1016, 2999, 5000 }) |code| try std.testing.expect(!isValidCloseCode(code));
 }

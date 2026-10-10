@@ -45,7 +45,7 @@ Two things came with it and stay:
 | D9 | `HeaderName`, `HeaderStore`, `MutableHeaderStore` and `MapHeaderStore` are the `relic_headers` package. `Headers` is a typed accessor view over a `HeaderStore`, shaped like `QueryParameters` and `FormFields`. The `Map` API is gone, with `entries` kept as a deprecated extension. | One accessor pattern across path, query, form and headers. Other packages build headers without Relic's codecs. |
 | D10 | `Body` keeps its bytes when built from a `String` or a `Uint8List`. | The in-call response path writes them in one call and never drains a stream. |
 | D11 | Isolates join one native server through an explicit group token. | Every test binds port 0 and `noOfIsolates: n` calls the factory n times. Keyed by address, that would be n servers. |
-| D12 | WebSocket framing for `relic_native` is Dart code in `relic_core`, over the hijacked byte channel. | `web_socket_channel` 3.x ships no transport-agnostic framer and `dart:io` frames only through its own upgrade. In Dart the framer is shared by every adapter and unit-tested without sockets. |
+| D12 | WebSocket framing for `relic_native` is Zig on the connection's task. `FramedWebSocket` in `relic_core` frames for an adapter with hijack only, and is the oracle the native framer is held to. | Unmasking, assembly and UTF-8 checks touch every byte, which is the one hot path Dart ran. `web_socket_channel` 3.x ships no transport-agnostic framer and `dart:io` frames only through its own upgrade. |
 | D13 | On Windows the waiter thread waits on a futex word with a 10 ms bound instead of a loop handle. | zio's IOCP loop has no handle a host thread can wait on. An idle reactor is ticked every 10 ms until a request wakes it. |
 
 ## 4. Architecture
@@ -94,8 +94,8 @@ abstract interface class Adapter {
 }
 ```
 
-`relic_io` advertises `hijack` and `webSocket`. `relic_native` advertises
-`hijack`. `Adapter.port` remains as a deprecated extension over `listeners`.
+`relic_io` and `relic_native` advertise `hijack` and `webSocket`.
+`Adapter.port` remains as a deprecated extension over `listeners`.
 
 ### 5.2 AdapterExchange
 
@@ -126,9 +126,10 @@ abstract interface class AdapterExchange {
   response has none, no body for a HEAD or a 1xx, 204 or 304, and whether
   the connection closes after. Both adapters frame the same bytes, and the
   conformance suite checks it over raw sockets.
-- `upgradeWebSocket` is called only on an adapter with `capabilities.webSocket`.
-  Otherwise the core does the RFC 6455 handshake and framing itself over
-  `hijack()` (5.9).
+- The core checks that the request is an opening handshake it can accept
+  and answers 400 otherwise. `upgradeWebSocket` is then called on an
+  adapter with `capabilities.webSocket`. Otherwise the core does the
+  RFC 6455 handshake and framing itself over `hijack()` (5.9).
 
 ### 5.3 Header primitives (`relic_headers`)
 
@@ -332,6 +333,15 @@ track what `connectionsInfo` needs.
    Loop on keep-alive. A body the handler did not read is drained up to
    4 MiB so the connection can be reused, and the connection closes beyond
    that.
+6. On a WebSocket upgrade: write the 101 Dart encoded, then a reader task
+   and a writer task run until the close handshake is over, the peer is
+   gone, or Dart aborts. The reader checks each frame as RFC 6455 lets a
+   server check it, unmasks sixteen bytes at a time, assembles fragments,
+   validates text, answers pings and counts pongs, and hands Dart whole
+   messages through the inbound queue. A violation is answered with a
+   close frame and reported to Dart with its code. The writer frames what
+   Dart sends and the pongs, and after a close frame waits up to 2 s for
+   the peer's before the connection ends.
 
 While stopping, a request that arrives gets 503.
 
@@ -395,6 +405,9 @@ relic_finish_stream(view, ok)                           ok false drops the conne
 relic_read_chunk(view, data*, len*, status*) -> u8      0 when nothing is queued
 relic_watch(view)                                       post peer_gone on EOF
 relic_hijack(view)                                      raw channel over the chunk queues
+relic_ws_upgrade(view, head, head_len, max_message)     WebSocket framed by the task
+relic_ws_send(view, data, len, opcode) -> bool          text, binary, ping or close
+relic_ws_read(view, data*, len*, kind*) -> u8           a message, a close, a failure or a drop
 relic_abort(view)
 relic_alloc(len) -> u8*, relic_free(p)                  Dart's response buffers
 ```
@@ -442,6 +455,7 @@ relic_alloc(len) -> u8*, relic_free(p)                  Dart's response buffers
 | Inbound chunks | `malloc` by the task | Dart, with `relic_free`, after copying |
 | Response head and body | `relic_alloc` by Dart | task, after writing |
 | Outbound chunks | `relic_alloc` by Dart | task, after writing |
+| WebSocket messages | `malloc` by the task | Dart, with `relic_free`, after copying |
 | `Exchange` | task stack | implicit |
 
 Dart never touches an `ExchangeView` after `relic_respond`, `relic_abort` or

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:collection';
+import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io' as io;
 import 'dart:isolate';
@@ -8,9 +9,12 @@ import 'dart:typed_data';
 import 'package:ffi/ffi.dart';
 import 'package:relic_core/relic_core.dart';
 import 'package:stream_channel/stream_channel.dart';
+import 'package:web_socket/web_socket.dart';
 
 import 'bindings.dart' as native;
 import 'response_encoder.dart';
+
+part 'native_web_socket.dart';
 
 /// An [Adapter] backed by the Zig HTTP server in `src/relic_native.zig`.
 ///
@@ -42,8 +46,9 @@ final class NativeAdapter implements Adapter {
   /// link of, so one comes and goes with a few field writes.
   final _inFlight = LinkedList<NativeExchange>();
 
-  /// Connections a handler took over as raw channels. They are no longer
-  /// exchanges the drain waits for, but still connections to close.
+  /// Connections a handler took over, as raw channels or WebSockets. They
+  /// are no longer exchanges the drain waits for, but still connections
+  /// to close.
   final _hijacked = <NativeExchange>{};
 
   /// Exchanges by the address of their native view, for the events the
@@ -67,8 +72,16 @@ final class NativeAdapter implements Adapter {
   /// aborts them. The same ceiling as the dart:io adapter's.
   static const _drainTimeout = Duration(seconds: 5);
 
-  NativeAdapter._(this._server, this._reactor, this._wake, this.address)
-    : _port = native.serverPort(_server),
+  /// The most bytes a WebSocket message from a peer may have.
+  final int _maxWebSocketMessage;
+
+  NativeAdapter._(
+    this._server,
+    this._reactor,
+    this._wake,
+    this.address,
+    this._maxWebSocketMessage,
+  ) : _port = native.serverPort(_server),
       _slot = native.reactorSlot(_reactor),
       _authority = _listenerAuthority(address, native.serverPort(_server));
 
@@ -102,6 +115,8 @@ final class NativeAdapter implements Adapter {
   /// head or a body that times out answers 408 and closes, and the other
   /// timeouts close without a response. [Duration.zero] disables a limit.
   /// [maxConnections] caps the connections accepted at once, 0 for none.
+  /// A WebSocket message over [maxWebSocketMessage] bytes closes the
+  /// connection with 1009.
   ///
   /// Throws [UnsupportedError] on a platform without the native library,
   /// and [io.SocketException] when the port cannot be bound.
@@ -117,6 +132,7 @@ final class NativeAdapter implements Adapter {
     final Duration headerTimeout = const Duration(seconds: 10),
     final Duration bodyTimeout = const Duration(seconds: 30),
     final Duration writeTimeout = const Duration(seconds: 30),
+    final int maxWebSocketMessage = FramedWebSocket.defaultMaxMessageSize,
   }) async {
     _initDartApi();
     final options = calloc<native.Options>();
@@ -155,7 +171,7 @@ final class NativeAdapter implements Adapter {
         'is taken (reactorCapacity: $reactorCapacity)',
       );
     }
-    return NativeAdapter._(server, reactor, wake, address);
+    return NativeAdapter._(server, reactor, wake, address, maxWebSocketMessage);
   }
 
   static var _dartApiReady = false;
@@ -178,7 +194,7 @@ final class NativeAdapter implements Adapter {
 
   @override
   AdapterCapabilities get capabilities =>
-      const AdapterCapabilities(hijack: true);
+      const AdapterCapabilities(hijack: true, webSocket: true);
 
   @override
   List<Listener> get listeners => [
@@ -438,6 +454,15 @@ final class NativeExchange extends LinkedListEntry<NativeExchange>
   /// The request body handed to the handler, to tell whether it read it.
   Body? _bodyObject;
 
+  /// The request built from this exchange, for the handshake of an
+  /// upgrade.
+  Request? _request;
+
+  /// The view while the connection is a WebSocket, after
+  /// [upgradeWebSocket].
+  Pointer<native.ExchangeView>? _wsView;
+  NativeWebSocket? _webSocket;
+
   /// How the exchange ended, once it has.
   ExchangeEnd? _end;
   Completer<void>? _cancelled;
@@ -536,7 +561,7 @@ final class NativeExchange extends LinkedListEntry<NativeExchange>
   Request toRequest() {
     final headers = Headers.fromStore(ByteHeaderStore(_head, _slots));
     final (target, scheme, authority) = _parseTarget();
-    return RequestInternal.create(
+    return _request = RequestInternal.create(
       method,
       null,
       this,
@@ -969,12 +994,98 @@ final class NativeExchange extends LinkedListEntry<NativeExchange>
     _adapter._finished(this);
   }
 
+  /// Writes the 101 and leaves the connection with its task, which frames
+  /// it from then on. The core checked the handshake, so the accept key
+  /// is there to compute.
   @override
-  FutureOr<RelicWebSocket> upgradeWebSocket() =>
-      throw UnsupportedError('relic_native cannot upgrade to WebSocket yet');
+  RelicWebSocket upgradeWebSocket() {
+    final request = _request;
+    if (request == null) {
+      throw StateError('upgradeWebSocket before toRequest');
+    }
+    final acceptKey = webSocketAcceptKey(request);
+    if (acceptKey == null) {
+      throw const FormatException('Not a WebSocket upgrade request');
+    }
+    final head = webSocketHandshakeResponse(acceptKey);
+    final view = _takeView();
+    _wsView = view;
+    _expectEvents();
+    native.wsUpgrade(
+      view,
+      _nativeCopy(head),
+      head.length,
+      _adapter._maxWebSocketMessage,
+    );
+    _adapter._scheduleDrain();
+    _adapter._tookOver(this);
+    _complete(ExchangeEnd.upgraded);
+    return _webSocket = NativeWebSocket._(this);
+  }
+
+  /// Pongs the native side has counted, or null once the connection is
+  /// gone.
+  int? get _wsPongs => _wsView?.ref.wsPongs;
+
+  /// Queues a frame for the peer. Nothing happens on a connection that is
+  /// gone.
+  void _wsSend(final WebSocketOpcode opcode, final Uint8List payload) {
+    final view = _wsView;
+    if (view == null) return;
+    var buffer = nullptr.cast<Uint8>();
+    if (payload.isNotEmpty) buffer = _nativeCopy(payload);
+    _adapter._scheduleDrain();
+    if (!native.wsSend(view, buffer, payload.length, opcode.code)) {
+      if (buffer != nullptr) native.free(buffer);
+      // Out of memory. The connection is dropped.
+      abort();
+    }
+  }
+
+  /// Hands the socket the messages the native side queued.
+  void _pullWs() {
+    final view = _wsView;
+    final socket = _webSocket;
+    if (view == null || socket == null) return;
+    final data = _adapter._chunkData;
+    final length = _adapter._chunkLength;
+    final kind = _adapter._chunkStatus;
+    try {
+      while (native.wsRead(view, data, length, kind) != 0) {
+        final pointer = data.value;
+        final bytes = pointer == nullptr
+            ? _noBytes
+            : pointer.asTypedList(length.value);
+        try {
+          socket._onMessage(_WsKind.of(kind.value), bytes);
+        } finally {
+          if (pointer != nullptr) native.free(pointer);
+        }
+      }
+    } finally {
+      // Credit went back to the reader, which the next tick acts on.
+      _adapter._scheduleDrain();
+    }
+  }
+
+  /// The native side is done with a WebSocket connection.
+  void _wsGone() {
+    _wsView = null;
+    _webSocket?._gone();
+    _adapter._finished(this);
+  }
 
   @override
   void abort() {
+    final ws = _wsView;
+    if (ws != null) {
+      _wsView = null;
+      native.abort(ws);
+      _adapter._scheduleDrain();
+      _webSocket?._gone();
+      _adapter._finished(this);
+      return;
+    }
     if (_rawView != null) {
       _failRaw();
       return;
@@ -998,9 +1109,9 @@ final class NativeExchange extends LinkedListEntry<NativeExchange>
 
   /// Lists the exchange for the events the native side posts about it.
   /// It posts them for a streamed request body, a watched peer, a
-  /// streamed response and a hijacked connection, so an exchange is
-  /// listed before any of those starts. One that is answered from memory
-  /// is never listed.
+  /// streamed response, a hijacked connection and a WebSocket, so an
+  /// exchange is listed before any of those starts. One that is answered
+  /// from memory is never listed.
   void _expectEvents() {
     if (_expectsEvents) return;
     _expectsEvents = true;
@@ -1038,6 +1149,11 @@ final class NativeExchange extends LinkedListEntry<NativeExchange>
   void _onEvent({required final bool last}) {
     if (last) {
       if (_rawView != null) _rawGone();
+      if (_wsView != null) _wsGone();
+      return;
+    }
+    if (_wsView != null) {
+      _pullWs();
       return;
     }
     // After the sink closed, what the peer still sends or its EOF is of
