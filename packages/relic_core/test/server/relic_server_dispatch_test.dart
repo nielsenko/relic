@@ -35,6 +35,17 @@ final class _FakeAdapter implements Adapter {
 /// What the fake exchange should do when the core calls back into it.
 enum _Respond { sync, async, throwSync, failAsync }
 
+/// The headers of an opening handshake (RFC 6455 4.2.1), from [origin]
+/// when there is one.
+Headers _handshake({final String? origin}) => Headers.build(
+  (final mh) => mh
+    ..['upgrade'] = ['websocket']
+    ..['connection'] = ['Upgrade']
+    ..['sec-websocket-version'] = ['13']
+    ..['sec-websocket-key'] = ['dGhlIHNhbXBsZSBub25jZQ==']
+    ..['origin'] = origin == null ? null : [origin],
+);
+
 final class _FakeExchange implements AdapterExchange {
   final _Respond respondMode;
   final Uri url;
@@ -370,9 +381,7 @@ void main() {
     );
     final exchange = _FakeExchange(
       url: Uri.parse('http://example.com/ws'),
-      headers: Headers.build(
-        (final mh) => mh['origin'] = ['http://example.com'],
-      ),
+      headers: _handshake(origin: 'http://example.com'),
     );
 
     await _push(adapter, exchange);
@@ -381,14 +390,34 @@ void main() {
     expect(socket, isNotNull);
   });
 
+  test('Given a handler that upgrades to WebSocket, '
+      'when an exchange that is not an opening handshake is pushed, '
+      'then a 400 is sent and no upgrade happens', () async {
+    final (_, adapter) = await _serve(
+      (final _) => WebSocketUpgrade((final _) {}),
+    );
+    final exchange = _FakeExchange(url: Uri.parse('http://example.com/ws'));
+
+    await _push(adapter, exchange);
+
+    expect(exchange.upgraded, isFalse);
+    expect(exchange.responses.single.statusCode, 400);
+  });
+
   test('Given two upgraded WebSockets of which one closed, '
       'when the server closes, '
       'then only the open one is told to go away', () async {
     final (server, adapter) = await _serve(
       (final _) => WebSocketUpgrade((final _) {}),
     );
-    final closed = _FakeExchange(url: Uri.parse('http://example.com/ws'));
-    final open = _FakeExchange(url: Uri.parse('http://example.com/ws'));
+    final closed = _FakeExchange(
+      url: Uri.parse('http://example.com/ws'),
+      headers: _handshake(),
+    );
+    final open = _FakeExchange(
+      url: Uri.parse('http://example.com/ws'),
+      headers: _handshake(),
+    );
     await _push(adapter, closed);
     await _push(adapter, open);
     closed.webSocket.peerClosed();

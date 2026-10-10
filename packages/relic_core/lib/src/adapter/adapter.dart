@@ -146,7 +146,9 @@ abstract interface class AdapterExchange {
   /// Throws [UnsupportedError] unless [AdapterCapabilities.hijack].
   FutureOr<StreamChannel<Uint8List>> hijack();
 
-  /// Performs the WebSocket handshake and hands back the socket.
+  /// Performs the WebSocket handshake and hands back the socket. The core
+  /// has checked that the request is an opening handshake it can accept
+  /// before it calls this.
   ///
   /// Throws [UnsupportedError] unless [AdapterCapabilities.webSocket].
   FutureOr<RelicWebSocket> upgradeWebSocket();

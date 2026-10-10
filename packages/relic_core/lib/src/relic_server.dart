@@ -213,6 +213,16 @@ final class _RelicServer implements RelicServer {
         if (!_isOriginAllowed(request, upgrade)) {
           return exchange.respond(Response.forbidden());
         }
+        // A request that is not a valid opening handshake (RFC 6455 4.2.1)
+        // gets 400 here, so an adapter's upgradeWebSocket never sees one.
+        final acceptKey = webSocketAcceptKey(request);
+        if (acceptKey == null) {
+          return exchange.respond(
+            Response.badRequest(
+              body: Body.fromString('Not a WebSocket upgrade request'),
+            ),
+          );
+        }
         final capabilities = _adapter!.capabilities;
         if (capabilities.webSocket) {
           final socket = exchange.upgradeWebSocket();
@@ -225,26 +235,17 @@ final class _RelicServer implements RelicServer {
         if (!capabilities.hijack) {
           return exchange.respond(Response.notImplemented());
         }
-        return _upgradeOverHijack(exchange, request, upgrade);
+        return _upgradeOverHijack(exchange, acceptKey, upgrade);
     }
   }
 
   /// The RFC 6455 opening handshake on a raw channel, for an adapter with
-  /// no framer of its own. A request that is not a valid handshake gets
-  /// 400 and no channel.
+  /// no framer of its own.
   FutureOr<void> _upgradeOverHijack(
     final AdapterExchange exchange,
-    final Request request,
+    final String acceptKey,
     final WebSocketUpgrade upgrade,
   ) {
-    final acceptKey = webSocketAcceptKey(request);
-    if (acceptKey == null) {
-      return exchange.respond(
-        Response.badRequest(
-          body: Body.fromString('Not a WebSocket upgrade request'),
-        ),
-      );
-    }
     final channel = exchange.hijack();
     if (channel is Future<StreamChannel<Uint8List>>) {
       return channel.then(
