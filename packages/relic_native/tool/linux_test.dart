@@ -1,8 +1,9 @@
 // Runs the Zig tests in a Linux container, once with the io_uring
 // syscalls allowed and once with Docker's default seccomp profile, which
 // blocks them, so zio's auto backend takes io_uring in the first run and
-// falls back to epoll in the second. The repo is mounted read-only, and
-// zig fetches zio inside the container.
+// falls back to epoll in the second. The repo is mounted read-only and
+// the package copied out of it, since zig fetches zio into a zig-pkg
+// directory next to build.zig.
 //
 //   dart run tool/linux_test.dart               # relic_native, both backends
 //   dart run tool/linux_test.dart --zio=<path>  # and the suite of a zio checkout
@@ -27,13 +28,11 @@ Future<void> main(final List<String> args) async {
     ('epoll', <String>[]),
   ]) {
     stdout.writeln('== relic_native on $name');
-    failed |= !await _run([
-      ...options,
-      '-v',
-      '$repo:$repo:ro',
-      '-w',
-      package,
-    ], 'zig build test --cache-dir /tmp/zc --summary all');
+    failed |= !await _run(
+      [...options, '-v', '$repo:$repo:ro'],
+      'cp -r $package /work && cd /work && '
+      'zig build test --cache-dir /tmp/zc --summary all',
+    );
   }
   if (zio != null) {
     for (final backend in ['epoll', 'io_uring']) {
