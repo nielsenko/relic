@@ -216,6 +216,9 @@ final class FramedWebSocket implements RelicWebSocket {
   void _onError(final Object error, final StackTrace stackTrace) {
     if (error is WebSocketProtocolException) {
       _fail(error);
+      // The decoder ended the frame stream, so the peer's answer to the
+      // close frame can never be read and nothing waits for it.
+      _closeSink();
       return;
     }
     if (!_events.isClosed) {

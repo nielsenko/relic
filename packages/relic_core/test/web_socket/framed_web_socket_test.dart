@@ -239,6 +239,7 @@ void main() {
 
   test('Given a framed socket, when the peer breaks the protocol, '
       'then the handler gets an error, a 1002 close and the end', () async {
+    final clock = Stopwatch()..start();
     h.toServer.add(Uint8List.fromList([0x81, 0x01, 0x41])); // unmasked
 
     await expectLater(
@@ -252,6 +253,12 @@ void main() {
     final close = await h.next;
     expect(close.opcode, WebSocketOpcode.close);
     expect(close.payload.sublist(0, 2), [0x03, 0xea]);
+    await h.socket.done;
+    expect(
+      clock.elapsed,
+      lessThan(FramedWebSocket.closeTimeout),
+      reason: 'The frame stream is over, so nothing can answer the close',
+    );
   });
 
   test('Given a framed socket, when the peer sends text that is not UTF-8, '
