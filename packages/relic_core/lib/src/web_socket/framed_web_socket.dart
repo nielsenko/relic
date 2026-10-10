@@ -54,7 +54,7 @@ final class FramedWebSocket implements RelicWebSocket {
         );
   }
 
-  /// Completes once the connection is closed, whoever closed it.
+  @override
   Future<void> get done => _done.future;
 
   @override

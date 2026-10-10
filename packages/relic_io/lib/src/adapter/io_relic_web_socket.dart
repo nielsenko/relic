@@ -8,6 +8,7 @@ import 'package:relic_core/relic_core.dart';
 class IORelicWebSocket implements RelicWebSocket {
   final io.WebSocket _webSocket;
   final _events = StreamController<WebSocketEvent>();
+  final _done = Completer<void>();
 
   /// Create a new RelicWebSocket connection using dart:io WebSocket.
   ///
@@ -73,6 +74,7 @@ class IORelicWebSocket implements RelicWebSocket {
         _events.addError(wse, st);
       },
       onDone: () {
+        _done.complete();
         if (_events.isClosed) return;
         _events
           ..add(
@@ -167,4 +169,7 @@ class IORelicWebSocket implements RelicWebSocket {
 
   @override
   bool get isClosed => _events.isClosed;
+
+  @override
+  Future<void> get done => _done.future;
 }

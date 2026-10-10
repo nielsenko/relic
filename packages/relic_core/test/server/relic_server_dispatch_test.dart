@@ -90,11 +90,13 @@ final class _FakeExchange implements AdapterExchange {
     return StreamChannel(controller.stream, controller.sink);
   }
 
+  final webSocket = _FakeWebSocket();
+
   @override
   FutureOr<RelicWebSocket> upgradeWebSocket() {
     upgraded = true;
     _finish(ExchangeEnd.upgraded);
-    return _FakeWebSocket();
+    return webSocket;
   }
 
   @override
@@ -119,7 +121,23 @@ final class _FakeExchange implements AdapterExchange {
   }
 }
 
-final class _FakeWebSocket extends Fake implements RelicWebSocket {}
+/// A socket whose peer the test can hang up, and that records the
+/// going-away close the server sends on shutdown.
+final class _FakeWebSocket extends Fake implements RelicWebSocket {
+  final _done = Completer<void>();
+  var toldToGoAway = false;
+
+  void peerClosed() => _done.complete();
+
+  @override
+  Future<void> get done => _done.future;
+
+  @override
+  bool get isClosed => _done.isCompleted;
+
+  @override
+  Future<void> closeGoingAway() async => toldToGoAway = true;
+}
 
 Future<(RelicServer, _FakeAdapter)> _serve(final Handler handler) async {
   final adapter = _FakeAdapter();
@@ -361,6 +379,25 @@ void main() {
 
     expect(exchange.upgraded, isTrue);
     expect(socket, isNotNull);
+  });
+
+  test('Given two upgraded WebSockets of which one closed, '
+      'when the server closes, '
+      'then only the open one is told to go away', () async {
+    final (server, adapter) = await _serve(
+      (final _) => WebSocketUpgrade((final _) {}),
+    );
+    final closed = _FakeExchange(url: Uri.parse('http://example.com/ws'));
+    final open = _FakeExchange(url: Uri.parse('http://example.com/ws'));
+    await _push(adapter, closed);
+    await _push(adapter, open);
+    closed.webSocket.peerClosed();
+    await closed.webSocket.done;
+
+    await server.close();
+
+    expect(closed.webSocket.toldToGoAway, isFalse);
+    expect(open.webSocket.toldToGoAway, isTrue);
   });
 
   test('Given a handler that upgrades to WebSocket, '

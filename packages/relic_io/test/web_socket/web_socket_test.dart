@@ -25,6 +25,24 @@ void main() {
     _server = null;
   });
 
+  test('Given a connected IORelicWebSocket, '
+      'when the server closes it, '
+      'then done completes', () async {
+    await scheduleServer(
+      (final req) => WebSocketUpgrade((final ws) => ws.close()),
+    );
+
+    final client = await IORelicWebSocket.connect(
+      Uri.parse('ws://localhost:$_serverPort'),
+    );
+
+    await expectLater(
+      client.done.timeout(const Duration(seconds: 2)),
+      completes,
+    );
+    expect(client.isClosed, isTrue);
+  });
+
   test('Given a web socket connection with a ping interval, '
       'when the server side disappear, '
       'then client socket closes', () async {

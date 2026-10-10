@@ -11,6 +11,10 @@ abstract interface class RelicWebSocket implements WebSocket {
   /// If `null`, no ping messages are sent.
   Duration? pingInterval;
 
+  /// Completes once the connection is closed, whoever closed it. Never
+  /// completes with an error.
+  Future<void> get done;
+
   /// Whether the web-socket is closed.
   ///
   /// May return false positives (`true`), if the peer is disconnected but the

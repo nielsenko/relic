@@ -261,18 +261,14 @@ final class _RelicServer implements RelicServer {
     final WebSocketUpgrade upgrade,
   ) {
     channel.sink.add(webSocketHandshakeResponse(acceptKey));
-    final socket = FramedWebSocket(channel);
-    unawaited(socket.done.whenComplete(() => _sockets.remove(socket)));
-    _handOver(socket, upgrade);
+    _handOver(FramedWebSocket(channel), upgrade);
   }
 
-  /// Keeps [socket] for the going-away close and gives it to the handler.
-  /// Sockets that closed on their own are let go of here, since not every
-  /// adapter's socket says when it is done.
+  /// Keeps [socket] for the going-away close until it is done, and gives
+  /// it to the handler.
   void _handOver(final RelicWebSocket socket, final WebSocketUpgrade upgrade) {
-    _sockets
-      ..removeWhere((final s) => s.isClosed)
-      ..add(socket);
+    _sockets.add(socket);
+    unawaited(socket.done.whenComplete(() => _sockets.remove(socket)));
     upgrade.callback(socket);
   }
 

@@ -163,9 +163,8 @@ class IOAdapter implements Adapter {
   }
 
   void _trackWebSocket(final IORelicWebSocket webSocket) {
-    _webSockets
-      ..removeWhere((final ws) => ws.isClosed)
-      ..add(webSocket);
+    _webSockets.add(webSocket);
+    unawaited(webSocket.done.whenComplete(() => _webSockets.remove(webSocket)));
   }
 }
 
