@@ -327,15 +327,19 @@ String _markdown(
     )
     ..writeln()
     ..writeln(
-      '| target | workload | load | offered rps | rps | p50 | p99 | p99.9 |',
+      '| target | workload | load | offered rps | rps | p50 | p99 | p99.9 '
+      '| errors |',
     )
-    ..writeln('|---|---|---|---|---|---|---|---|');
+    ..writeln('|---|---|---|---|---|---|---|---|---|');
   for (final m in results) {
+    final errors = m.errors > 0 || m.nonOk > 0
+        ? '${m.errors} failed, ${m.nonOk} non-200'
+        : '-';
     buffer.writeln(
       '| ${m.target} | ${m.workload} | ${(m.load * 100).round()}% | '
       '${m.offeredRps} | ${m.rps.round()} | ${m.p50.toStringAsFixed(2)} | '
-      '${m.p99.toStringAsFixed(2)} | ${m.p999.toStringAsFixed(2)} |'
-      '${m.errors > 0 || m.nonOk > 0 ? ' ${m.errors} errors, ${m.nonOk} non-200' : ''}',
+      '${m.p99.toStringAsFixed(2)} | ${m.p999.toStringAsFixed(2)} | '
+      '$errors |',
     );
   }
   return buffer.toString();
