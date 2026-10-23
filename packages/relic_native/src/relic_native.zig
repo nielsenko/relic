@@ -818,10 +818,15 @@ const Link = struct {
     }
 
     /// Sends close_notify, or the alert a failed read queued, and frees the
-    /// TLS layer. Nothing for a plain link.
+    /// TLS layer. Nothing for a plain link. The send runs under the
+    /// lingering close's deadline. The task's cancel is spent by now, and a
+    /// peer that stopped reading must not hold the task past it.
     fn deinit(self: *Link, gpa: std.mem.Allocator) void {
         const secure = self.secure orelse return;
-        if (secure.conn) |*conn| conn.close() catch {};
+        if (secure.conn) |*conn| {
+            self.setWriteTimeout(deadline(lingering_close_ms));
+            conn.close() catch {};
+        }
         gpa.destroy(secure);
         self.secure = null;
     }
