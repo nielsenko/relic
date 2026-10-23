@@ -200,18 +200,27 @@ final class _DoubleParser extends ValueParser<double> {
   double parse(String value) => double.parse(value);
 }
 
+const _synopsis = 'usage: dart run bin/http_load.dart [options]';
+
 Future<void> main(List<String> args) async {
-  final config = resolveOptions(
-    LoadOption.values,
-    args,
-    synopsis: 'usage: dart run bin/http_load.dart [options]',
-  );
+  final config = resolveOptions(LoadOption.values, args, synopsis: _synopsis);
   final targets = config.value(LoadOption.targets);
   final connections = config.value(LoadOption.connections);
   final seconds = config.value(LoadOption.seconds);
   final loads = config.value(LoadOption.loads);
   final tls = config.value(LoadOption.tls);
   final out = config.optionalValue(LoadOption.out);
+  for (final spec in targets) {
+    final (target, url) = _split(spec);
+    if (url != null) continue;
+    if (_parseTarget(target).kind == 'shelf' && tls) {
+      usageError(
+        'No TLS on shelf: $spec',
+        LoadOption.values,
+        synopsis: _synopsis,
+      );
+    }
+  }
 
   final workloads = [
     for (final name in config.value(LoadOption.workloads))
@@ -290,13 +299,20 @@ Future<void> main(List<String> args) async {
   return (spec, null);
 }
 
-/// A server for [target]: `io`, `native` or `shelf`, or one of them
-/// followed by an isolate count.
-Future<Server> _start(String target, {required bool tls}) {
+/// The server kind and isolate count in [target]: `io`, `native` or
+/// `shelf`, or one of them followed by an isolate count. Anything else is
+/// a usage error.
+({String kind, int isolates}) _parseTarget(String target) {
   final match = RegExp(r'^(io|native|shelf)(\d*)$').firstMatch(target);
-  if (match == null) throw ArgumentError.value(target, 'target');
-  final kind = match.group(1)!;
-  final isolates = int.tryParse(match.group(2)!) ?? 1;
+  if (match == null) {
+    usageError('Not a target: $target', LoadOption.values, synopsis: _synopsis);
+  }
+  return (kind: match.group(1)!, isolates: int.tryParse(match.group(2)!) ?? 1);
+}
+
+/// A server for [target], as [_parseTarget] reads it.
+Future<Server> _start(String target, {required bool tls}) {
+  final (:kind, :isolates) = _parseTarget(target);
   // Port 0 with several dart:io isolates gives each its own port and
   // the server reports the first one, so the dart:io targets take a fixed
   // port.
