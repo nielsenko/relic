@@ -20,6 +20,9 @@
 // `baselines/` has the same routes on bare hyper, on bare Deno.serve and
 // on dusty, a Zig server on the zio relic_native runs on.
 //
+// `--oha-threads=N` sizes oha's tokio pool, 4 by default, so a server of
+// four isolates and the load tool together stay within eight cores.
+//
 // `--tls` serves the local targets over TLS with relic_native's test
 // certificates. oha does not verify an https URL.
 
@@ -194,6 +197,15 @@ enum LoadOption<V> implements OptionDefinition<V> {
     ),
   ),
 
+  ohaThreads(
+    IntOption(
+      argName: 'oha-threads',
+      helpText: 'Worker threads of the oha runtime',
+      defaultsTo: 4,
+      min: 1,
+    ),
+  ),
+
   tls(
     FlagOption(
       argName: 'tls',
@@ -244,6 +256,7 @@ Future<void> main(final List<String> args) async {
   final seconds = config.value(LoadOption.seconds);
   final loads = config.value(LoadOption.loads);
   final saturationRuns = config.value(LoadOption.saturationRuns);
+  final ohaThreads = config.value(LoadOption.ohaThreads);
   final tls = config.value(LoadOption.tls);
   final out = config.optionalValue(LoadOption.out);
   // Every local target is read before the first run, so a bad one fails
@@ -268,7 +281,7 @@ Future<void> main(final List<String> args) async {
     final meter = await _meter(base);
     try {
       // One warm-up so JIT and caches are settled before the first number.
-      await _oha(base, workloads.first, connections, 2, null);
+      await _oha(base, workloads.first, connections, 2, null, ohaThreads);
       for (final workload in workloads) {
         final closedLoop = <int>[];
         for (var run = 0; run < saturationRuns; run++) {
@@ -278,6 +291,7 @@ Future<void> main(final List<String> args) async {
             connections,
             seconds,
             null,
+            ohaThreads,
           );
           closedLoop.add(saturation.rps.round());
         }
@@ -288,7 +302,14 @@ Future<void> main(final List<String> args) async {
         for (final load in loads) {
           final offered = (sat * load).round();
           await meter?.begin();
-          final run = await _oha(base, workload, connections, seconds, offered);
+          final run = await _oha(
+            base,
+            workload,
+            connections,
+            seconds,
+            offered,
+            ohaThreads,
+          );
           final cores = await meter?.end();
           results.add(
             Measurement(
@@ -320,7 +341,13 @@ Future<void> main(final List<String> args) async {
     }
   }
 
-  final table = _markdown(results, connections, seconds, saturationRuns);
+  final table = _markdown(
+    results,
+    connections,
+    seconds,
+    saturationRuns,
+    ohaThreads,
+  );
   stdout.write(table);
   if (out != null) {
     File(out).writeAsStringSync(table);
@@ -406,6 +433,7 @@ Future<OhaResult> _oha(
   final int connections,
   final int seconds,
   final int? rate,
+  final int threads,
 ) => runOha(
   '$base${workload.path}',
   connections: connections,
@@ -413,6 +441,7 @@ Future<OhaResult> _oha(
   rate: rate,
   headers: workload.headers,
   body: workload.body,
+  workerThreads: threads,
 );
 
 String _markdown(
@@ -420,12 +449,14 @@ String _markdown(
   final int connections,
   final int seconds,
   final int saturationRuns,
+  final int ohaThreads,
 ) {
   final buffer = StringBuffer()
     ..writeln(
-      '$connections connections, ${seconds}s per run, saturation the mean '
-      'of $saturationRuns closed-loop runs, latency in ms, cores the CPU time the server '
-      'process used over the run divided by its wall time.',
+      '$connections connections from oha on $ohaThreads threads, '
+      '${seconds}s per run, saturation the mean of $saturationRuns closed-loop runs, '
+      'latency in ms, cores the CPU time the server process used over the '
+      'run divided by its wall time.',
     )
     ..writeln()
     ..writeln(
