@@ -21,20 +21,7 @@ RelicApp loadApp() {
         ),
       ),
     )
-    ..get('/headers', (req) {
-      // What a page handler reads: the agent, the languages and a cookie.
-      final agent = req.headers.userAgent ?? '';
-      final languages = req.headers.acceptLanguage?.values.length ?? 0;
-      final session = req.headers.cookie?.cookies
-          .where((c) => c.name == 'session')
-          .firstOrNull
-          ?.value;
-      return Response.ok(
-        body: Body.fromString(
-          '${agent.length} $languages ${session?.length ?? 0}',
-        ),
-      );
-    })
+    ..get('/headers', _headers)
     ..get('/browser', (req) => _browser(req, _concatBody))
     ..get('/browser-json', (req) => _browser(req, _jsonEncodeBody))
     ..get('/browser-utf8', (req) => _browser(req, _utf8JsonBody))
@@ -56,6 +43,32 @@ RelicApp loadApp() {
       }
       return Response.ok(body: hello());
     });
+}
+
+/// The plaintext, headers and browser routes of [loadApp] as one plain
+/// [Handler] that switches on the path, so a run without the router
+/// measures the adapter and the handler alone.
+Handler loadHandler() {
+  Body hello() => Body.fromString('Hello, World!');
+  return (req) => switch (req.target.path) {
+    '/plaintext' => Response.ok(body: hello()),
+    '/headers' => _headers(req),
+    '/browser' => _browser(req, _concatBody),
+    _ => Response.notFound(),
+  };
+}
+
+/// What a page handler reads: the agent, the languages and a cookie.
+Response _headers(Request req) {
+  final agent = req.headers.userAgent ?? '';
+  final languages = req.headers.acceptLanguage?.values.length ?? 0;
+  final session = req.headers.cookie?.cookies
+      .where((c) => c.name == 'session')
+      .firstOrNull
+      ?.value;
+  return Response.ok(
+    body: Body.fromString('${agent.length} $languages ${session?.length ?? 0}'),
+  );
 }
 
 /// A page handler on a real browser head.
