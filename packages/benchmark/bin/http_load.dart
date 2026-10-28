@@ -25,6 +25,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:benchmark/src/cpu.dart';
 import 'package:benchmark/src/load_app.dart';
 import 'package:benchmark/src/oha.dart';
 import 'package:benchmark/src/options.dart';
@@ -100,6 +101,10 @@ final class Measurement {
   final int errors;
   final int nonOk;
 
+  /// Cores the server process kept busy on average, or null when its CPU
+  /// time could not be read.
+  final double? cores;
+
   Measurement({
     required this.target,
     required this.workload,
@@ -111,6 +116,7 @@ final class Measurement {
     required this.p999,
     required this.errors,
     required this.nonOk,
+    required this.cores,
   });
 
   Map<String, Object> toJson() => {
@@ -124,6 +130,7 @@ final class Measurement {
     'p999Ms': p999,
     'errors': errors,
     'nonOk': nonOk,
+    'cores': ?cores,
   };
 }
 
@@ -265,6 +272,7 @@ Future<void> main(final List<String> args) async {
     final server = url == null ? await _start(local[target]!, tls: tls) : null;
     final base = url ?? '${tls ? 'https' : 'http'}://127.0.0.1:${server!.port}';
     stderr.writeln('$target at $base');
+    final meter = await _meter(base);
     try {
       // One warm-up so JIT and caches are settled before the first number.
       await _oha(base, workloads.first, connections, 2, null);
@@ -286,7 +294,9 @@ Future<void> main(final List<String> args) async {
         stderr.writeln('  ${workload.name}: saturates at $sat rps');
         for (final load in loads) {
           final offered = (sat * load).round();
+          await meter?.begin();
           final run = await _oha(base, workload, connections, seconds, offered);
+          final cores = await meter?.end();
           results.add(
             Measurement(
               target: target,
@@ -299,6 +309,7 @@ Future<void> main(final List<String> args) async {
               p999: run.p999,
               errors: run.failed,
               nonOk: run.nonOk,
+              cores: cores,
             ),
           );
           stderr.writeln(
@@ -306,6 +317,7 @@ Future<void> main(final List<String> args) async {
             '${run.rps.round()} rps, p50 ${run.p50.toStringAsFixed(2)} ms, '
             'p99 ${run.p99.toStringAsFixed(2)} ms, '
             'p99.9 ${run.p999.toStringAsFixed(2)} ms'
+            '${cores == null ? '' : ', ${cores.toStringAsFixed(2)} cores'}'
             '${run.failed > 0 ? ', ${run.failed} errors' : ''}',
           );
         }
@@ -325,6 +337,19 @@ Future<void> main(final List<String> args) async {
       ).convert(results.map((final m) => m.toJson()).toList()),
     );
   }
+}
+
+/// A CPU meter on the process listening at [base], or null when none is
+/// found. The server is in this process for the local targets, and whoever
+/// listens on the port for the others.
+Future<CpuMeter?> _meter(final String base) async {
+  final port = Uri.parse(base).port;
+  final pid = await listeningPid(port);
+  if (pid == null) {
+    stderr.writeln('  no process found on port $port, no cores column');
+    return null;
+  }
+  return CpuMeter(pid);
 }
 
 /// The target name and URL in [spec].
@@ -404,14 +429,15 @@ String _markdown(
   final buffer = StringBuffer()
     ..writeln(
       '$connections connections, ${seconds}s per run, saturation the mean '
-      'of $saturationRuns closed-loop runs, latency in ms.',
+      'of $saturationRuns closed-loop runs, latency in ms, cores the CPU time the server '
+      'process used over the run divided by its wall time.',
     )
     ..writeln()
     ..writeln(
       '| target | workload | load | offered rps | rps | p50 | p99 | p99.9 '
-      '| errors |',
+      '| cores | errors |',
     )
-    ..writeln('|---|---|---|---|---|---|---|---|---|');
+    ..writeln('|---|---|---|---|---|---|---|---|---|---|');
   for (final m in results) {
     final errors = m.errors > 0 || m.nonOk > 0
         ? '${m.errors} failed, ${m.nonOk} non-200'
@@ -420,7 +446,7 @@ String _markdown(
       '| ${m.target} | ${m.workload} | ${(m.load * 100).round()}% | '
       '${m.offeredRps} | ${m.rps.round()} | ${m.p50.toStringAsFixed(2)} | '
       '${m.p99.toStringAsFixed(2)} | ${m.p999.toStringAsFixed(2)} | '
-      '$errors |',
+      '${m.cores?.toStringAsFixed(2) ?? '-'} | $errors |',
     );
   }
   return buffer.toString();
