@@ -16,6 +16,7 @@
 /// ```
 library;
 
+import 'package:http/http.dart' as http;
 import 'package:relic_core/relic_core.dart';
 import 'package:test/test.dart';
 
@@ -39,12 +40,14 @@ import 'src/conformance/web_socket_tests.dart';
 export 'src/conformance/conformance.dart';
 export 'src/conformance/framing_tests.dart';
 export 'src/conformance/header_wire_tests.dart';
+export 'src/conformance/request_body_tests.dart';
 
 /// Declares the whole suite for one adapter.
 ///
 /// [bind] returns a fresh adapter factory each time it is called. `shared`
 /// is true when several isolates will call the factory for one server.
-/// [connect] opens a raw client connection, see [AdapterConformance].
+/// [connect], [scheme] and [newClient] say how a client reaches a server,
+/// see [AdapterConformance].
 /// The three flags name what a transport may be unable to do, see
 /// [AdapterConformance]. The suite skips the tests that need it, with the
 /// reason.
@@ -53,6 +56,8 @@ void adapterConformance(
   required AdapterFactoryBuilder bind,
   required AdapterCapabilities capabilities,
   SocketConnector connect = plainConnect,
+  String scheme = 'http',
+  http.Client Function() newClient = http.Client.new,
   bool seesPeerGone = true,
   bool failsRespondMidStream = true,
   bool keepsPipelinedBytes = true,
@@ -62,6 +67,8 @@ void adapterConformance(
     bind: bind,
     capabilities: capabilities,
     connect: connect,
+    scheme: scheme,
+    newClient: newClient,
     seesPeerGone: seesPeerGone,
     failsRespondMidStream: failsRespondMidStream,
     keepsPipelinedBytes: keepsPipelinedBytes,
