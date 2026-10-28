@@ -6,6 +6,7 @@
 
 use std::convert::Infallible;
 use std::net::SocketAddr;
+use std::sync::Arc;
 
 use bytes::Bytes;
 use http_body_util::Full;
@@ -15,7 +16,10 @@ use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper::{Request, Response, StatusCode};
 use hyper_util::rt::TokioIo;
+use rustls_pki_types::pem::PemObject;
+use rustls_pki_types::{CertificateDer, PrivateKeyDer};
 use tokio::net::TcpListener;
+use tokio_rustls::TlsAcceptor;
 
 const ETAG_VALUE: &str = "\"relic-browser-1\"";
 
@@ -121,19 +125,44 @@ async fn handle(req: Request<Incoming>, items: &'static str) -> Result<Response<
     Ok(response)
 }
 
+fn tls_acceptor(cert_path: &str, key_path: &str) -> Result<TlsAcceptor, Box<dyn std::error::Error + Send + Sync>> {
+    let certs = CertificateDer::pem_file_iter(cert_path)?.collect::<Result<Vec<_>, _>>()?;
+    let key = PrivateKeyDer::from_pem_file(key_path)?;
+    let config = rustls::ServerConfig::builder()
+        .with_no_client_auth()
+        .with_single_cert(certs, key)?;
+    Ok(TlsAcceptor::from(Arc::new(config)))
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let port: u16 = std::env::args().nth(1).map(|p| p.parse()).transpose()?.unwrap_or(8090);
+    let args: Vec<String> = std::env::args().collect();
+    let port: u16 = args.get(1).map(|p| p.parse()).transpose()?.unwrap_or(8090);
+    let acceptor = match (args.get(2), args.get(3)) {
+        (Some(cert), Some(key)) => Some(tls_acceptor(cert, key)?),
+        (Some(_), None) => return Err("key path missing".into()),
+        _ => None,
+    };
     let items: &'static str = Box::leak(items().into_boxed_str());
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
     let listener = TcpListener::bind(addr).await?;
-    println!("listening on http://{addr}/");
+    println!("listening on {}://{addr}/", if acceptor.is_some() { "https" } else { "http" });
     loop {
         let (stream, _) = listener.accept().await?;
+        let acceptor = acceptor.clone();
         tokio::spawn(async move {
-            let io = TokioIo::new(stream);
             let service = service_fn(move |req| handle(req, items));
-            if let Err(err) = http1::Builder::new().serve_connection(io, service).await {
+            let result = match acceptor {
+                None => http1::Builder::new().serve_connection(TokioIo::new(stream), service).await,
+                Some(acceptor) => match acceptor.accept(stream).await {
+                    Ok(tls) => http1::Builder::new().serve_connection(TokioIo::new(tls), service).await,
+                    Err(err) => {
+                        eprintln!("tls: {err}");
+                        return;
+                    }
+                },
+            };
+            if let Err(err) = result {
                 eprintln!("connection: {err}");
             }
         });
