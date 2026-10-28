@@ -7,6 +7,9 @@
 //       --workloads=plaintext,json,headers,browser,alloc,mixed \
 //       --connections=64 --seconds=5 --loads=0.5,0.75,1.0 --out=load.md
 //
+// `--saturation-runs=5` finds the saturation rate as the mean of five
+// closed-loop runs.
+//
 // A `shelf` target is a shelf server on dart:io with the same routes.
 // `native-handler` or `io4-handler` mounts the plaintext, headers and
 // browser routes as one plain handler, with no router in the path.
@@ -172,6 +175,17 @@ enum LoadOption<V> implements OptionDefinition<V> {
     ),
   ),
 
+  saturationRuns(
+    IntOption(
+      argName: 'saturation-runs',
+      helpText:
+          'Closed-loop runs per workload, the mean of which is the '
+          'saturation rate',
+      defaultsTo: 1,
+      min: 1,
+    ),
+  ),
+
   tls(
     FlagOption(
       argName: 'tls',
@@ -221,6 +235,7 @@ Future<void> main(final List<String> args) async {
   final connections = config.value(LoadOption.connections);
   final seconds = config.value(LoadOption.seconds);
   final loads = config.value(LoadOption.loads);
+  final saturationRuns = config.value(LoadOption.saturationRuns);
   final tls = config.value(LoadOption.tls);
   final out = config.optionalValue(LoadOption.out);
   // Every local target is read before the first run, so a bad one fails
@@ -254,14 +269,20 @@ Future<void> main(final List<String> args) async {
       // One warm-up so JIT and caches are settled before the first number.
       await _oha(base, workloads.first, connections, 2, null);
       for (final workload in workloads) {
-        final saturation = await _oha(
-          base,
-          workload,
-          connections,
-          seconds,
-          null,
-        );
-        final sat = saturation.rps.round();
+        final closedLoop = <int>[];
+        for (var run = 0; run < saturationRuns; run++) {
+          final saturation = await _oha(
+            base,
+            workload,
+            connections,
+            seconds,
+            null,
+          );
+          closedLoop.add(saturation.rps.round());
+        }
+        final sat =
+            (closedLoop.reduce((final a, final b) => a + b) / closedLoop.length)
+                .round();
         stderr.writeln('  ${workload.name}: saturates at $sat rps');
         for (final load in loads) {
           final offered = (sat * load).round();
@@ -294,7 +315,7 @@ Future<void> main(final List<String> args) async {
     }
   }
 
-  final table = _markdown(results, connections, seconds);
+  final table = _markdown(results, connections, seconds, saturationRuns);
   stdout.write(table);
   if (out != null) {
     File(out).writeAsStringSync(table);
@@ -378,9 +399,13 @@ String _markdown(
   final List<Measurement> results,
   final int connections,
   final int seconds,
+  final int saturationRuns,
 ) {
   final buffer = StringBuffer()
-    ..writeln('$connections connections, ${seconds}s per run, latency in ms.')
+    ..writeln(
+      '$connections connections, ${seconds}s per run, saturation the mean '
+      'of $saturationRuns closed-loop runs, latency in ms.',
+    )
     ..writeln()
     ..writeln(
       '| target | workload | load | offered rps | rps | p50 | p99 | p99.9 '
