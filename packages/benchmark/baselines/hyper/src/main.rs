@@ -1,8 +1,15 @@
 //! The http_load.dart routes on bare hyper, as a floor for the Dart
-//! servers. One tokio runtime over every core, HTTP/1.1 keep-alive.
+//! servers. One tokio runtime, HTTP/1.1 keep-alive. A second number after
+//! the port is the worker thread count, one by default so it compares with
+//! one isolate, and one worker runs on the current thread with no pool.
+//! With a certificate chain and a key it serves HTTPS through rustls.
 //!
 //!   cargo run --release -- 8090
+//!   cargo run --release -- 8090 4
 //!   dart run bin/http_load.dart --targets=hyper=http://127.0.0.1:8090
+//!   cargo run --release -- 8443 4 \
+//!       ../../../relic_native/test/certs/localhost_cert.pem \
+//!       ../../../relic_native/test/certs/localhost_key.pem
 
 use std::convert::Infallible;
 use std::net::SocketAddr;
@@ -134,11 +141,28 @@ fn tls_acceptor(cert_path: &str, key_path: &str) -> Result<TlsAcceptor, Box<dyn 
     Ok(TlsAcceptor::from(Arc::new(config)))
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let args: Vec<String> = std::env::args().collect();
     let port: u16 = args.get(1).map(|p| p.parse()).transpose()?.unwrap_or(8090);
-    let acceptor = match (args.get(2), args.get(3)) {
+    // A second numeric argument is the worker count, else the rest are the
+    // certificate and key.
+    let (workers, rest): (usize, &[String]) = match args.get(2).map(|w| w.parse::<usize>()) {
+        Some(Ok(n)) if n >= 1 => (n, &args[3.min(args.len())..]),
+        _ => (1, &args[2.min(args.len())..]),
+    };
+    let runtime = if workers == 1 {
+        tokio::runtime::Builder::new_current_thread().enable_all().build()?
+    } else {
+        tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(workers)
+            .enable_all()
+            .build()?
+    };
+    runtime.block_on(serve(port, rest))
+}
+
+async fn serve(port: u16, rest: &[String]) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let acceptor = match (rest.first(), rest.get(1)) {
         (Some(cert), Some(key)) => Some(tls_acceptor(cert, key)?),
         (Some(_), None) => return Err("key path missing".into()),
         _ => None,
