@@ -14,8 +14,9 @@
 // `native-handler` or `io4-handler` mounts the plaintext, headers and
 // browser routes as one plain handler, with no router in the path.
 // A target that is a URL is a server started elsewhere (Bun, for one)
-// that serves the same paths, and `name=URL` labels it in the table:
-//   --targets=io,bun=http://127.0.0.1:3000
+// that serves the same paths, and `name=URL` labels it in the table, as
+// `name=kind` labels a server started here:
+//   --targets=relic-io=io,bun=http://127.0.0.1:3000
 // `baselines/` has the same routes on bare hyper, on bare Deno.serve and
 // on dusty, a Zig server on the zio relic_native runs on.
 //
@@ -249,9 +250,9 @@ Future<void> main(final List<String> args) async {
   // fast.
   final local = <String, ({String kind, int isolates, bool router})>{};
   for (final spec in targets) {
-    final (target, url) = _split(spec);
+    final (target, url, kind) = _split(spec);
     if (url != null) continue;
-    final parsed = _parseTarget(target);
+    final parsed = _parseTarget(kind);
     if (tls && !supportsTls(parsed.kind)) {
       usageError(
         'No TLS on ${parsed.kind}: $spec',
@@ -268,7 +269,7 @@ Future<void> main(final List<String> args) async {
   ];
   final results = <Measurement>[];
   for (final spec in targets) {
-    final (target, url) = _split(spec);
+    final (target, url, _) = _split(spec);
     final server = url == null ? await _start(local[target]!, tls: tls) : null;
     final base = url ?? '${tls ? 'https' : 'http'}://127.0.0.1:${server!.port}';
     stderr.writeln('$target at $base');
@@ -352,15 +353,17 @@ Future<CpuMeter?> _meter(final String base) async {
   return CpuMeter(pid);
 }
 
-/// The target name and URL in [spec].
+/// The target name, URL and local kind in [spec].
 ///
-/// `io`, `native4` or `shelf` starts a server here. `http://host:port` is
-/// a server started elsewhere, and `name=http://host:port` labels it.
-(String, String?) _split(final String spec) {
+/// `io`, `native4` or `shelf` starts a server here, and `name=native4`
+/// labels it. `http://host:port` is a server started elsewhere, and
+/// `name=http://host:port` labels it.
+(String, String?, String) _split(final String spec) {
   final at = spec.indexOf('=');
-  if (at > 0) return (spec.substring(0, at), spec.substring(at + 1));
-  if (spec.startsWith('http')) return (spec, spec);
-  return (spec, null);
+  final (name, value) = at > 0
+      ? (spec.substring(0, at), spec.substring(at + 1))
+      : (spec, spec);
+  return value.startsWith('http') ? (name, value, value) : (name, null, value);
 }
 
 /// The server kind, isolate count and router in [target]: `io`, `native`
