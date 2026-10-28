@@ -70,6 +70,11 @@ Future<OhaResult> runOha(
   final percentiles = json['latencyPercentiles'] as Map<String, dynamic>;
   final statuses = json['statusCodeDistribution'] as Map<String, dynamic>;
   final errors = json['errorDistribution'] as Map<String, dynamic>;
+  // No percentiles without a response: a run with none is a dead server,
+  // not a measurement.
+  if (statuses.isEmpty) {
+    throw ProcessException('oha', [url], 'No responses from $url: $errors');
+  }
   double ms(final String key) => (percentiles[key] as num) * 1000;
   var responses = 0;
   var nonOk = 0;
