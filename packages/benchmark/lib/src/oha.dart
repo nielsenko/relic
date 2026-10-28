@@ -49,11 +49,13 @@ Future<OhaResult> runOha(
   int? rate,
   List<String> headers = const [],
   String? body,
+  int? workerThreads,
 }) async {
   final result = await Process.run('oha', [
     '--no-tui',
     '--output-format',
     'json',
+    if (workerThreads != null) ...['--worker-threads', '$workerThreads'],
     '-c',
     '$connections',
     '-z',
