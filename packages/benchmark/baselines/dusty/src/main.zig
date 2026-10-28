@@ -1,9 +1,11 @@
 //! The http_load.dart routes on dusty, a Zig HTTP server on zio, as the
-//! floor for relic_native, which runs on the same zio. One executor, so it
-//! compares with one isolate. With a certificate chain and a key it serves
-//! HTTPS through tls.zig, as relic_native does.
+//! floor for relic_native, which runs on the same zio. One executor by
+//! default, so it compares with one isolate; a second number is the executor
+//! count, so it compares with that many isolates. With a certificate chain
+//! and a key it serves HTTPS through tls.zig, as relic_native does.
 //!
 //!   zig build run --release -- 8093
+//!   zig build run --release -- 8093 4
 //!   dart run bin/http_load.dart --targets=dusty=http://127.0.0.1:8093
 //!   zig build run --release -- 8443 \
 //!       ../../../relic_native/test/certs/localhost_cert.pem \
@@ -85,11 +87,19 @@ fn browser(req: *http.Request, res: *http.Response) !void {
 pub fn main(init: std.process.Init) !void {
     const args = try init.minimal.args.toSlice(init.arena.allocator());
     const port = if (args.len > 1) try std.fmt.parseInt(u16, args[1], 10) else 8093;
-    if (args.len == 3) return error.KeyPathMissing;
-    const tls: ?http.ServerConfig.Tls = if (args.len > 3) .{ .cert_path = args[2], .key_path = args[3] } else null;
+    var rest = args[@min(args.len, 2)..];
+    var executors: u8 = 1;
+    if (rest.len > 0) {
+        if (std.fmt.parseInt(u8, rest[0], 10)) |n| {
+            executors = n;
+            rest = rest[1..];
+        } else |_| {}
+    }
+    if (rest.len == 1) return error.KeyPathMissing;
+    const tls: ?http.ServerConfig.Tls = if (rest.len >= 2) .{ .cert_path = rest[0], .key_path = rest[1] } else null;
     items = try buildItems(init.arena.allocator());
 
-    const rt = try zio.Runtime.init(init.gpa, .{ .executors = .exact(1) });
+    const rt = try zio.Runtime.init(init.gpa, .{ .executors = .exact(executors) });
     defer rt.deinit();
 
     const address: http.Address = .{ .ip = .{ .ip4 = .loopback(port) } };
