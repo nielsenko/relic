@@ -14,15 +14,22 @@ import 'package:shelf_web_socket/shelf_web_socket.dart';
 /// run it.
 typedef ShelfHandlerBuilder = Handler Function();
 
+/// The certificate chain and key files an HTTPS shelf server presents.
+typedef ShelfTls = ({String chain, String key});
+
 /// A shelf server on dart:io for the benchmarks to compare Relic against,
 /// with the same routes as the Relic server of each tool.
 ///
 /// Several isolates share the port the way Relic's dart:io adapter does,
-/// with `shared: true` on every bind.
+/// with `shared: true` on every bind. With [ShelfTls] it serves HTTPS,
+/// each isolate from its own SecurityContext, since one cannot cross
+/// isolates.
 final class ShelfServer {
   final int port;
   final HttpServer _first;
-  final List<Isolate> _isolates;
+
+  /// Where each spawned isolate takes its close request.
+  final List<SendPort> _isolates;
 
   ShelfServer._(this.port, this._first, this._isolates);
 
@@ -30,26 +37,30 @@ final class ShelfServer {
     final ShelfHandlerBuilder builder, {
     required final int port,
     final int isolates = 1,
+    final ShelfTls? tls,
   }) async {
-    final first = await _bind(builder, port, shared: isolates > 1);
-    final spawned = <Isolate>[];
+    final first = await _bind(builder, port, shared: isolates > 1, tls: tls);
+    final spawned = <SendPort>[];
     for (var i = 1; i < isolates; i++) {
       final ready = ReceivePort();
-      spawned.add(
-        await Isolate.spawn(_serveInIsolate, (
-          builder,
-          first.port,
-          ready.sendPort,
-        )),
-      );
-      await ready.first;
+      await Isolate.spawn(_serveInIsolate, (
+        builder,
+        first.port,
+        ready.sendPort,
+        tls,
+      ));
+      spawned.add(await ready.first as SendPort);
     }
     return ShelfServer._(first.port, first, spawned);
   }
 
+  /// Closes every isolate's server, so the shared port is free when this
+  /// returns, then the first.
   Future<void> close({final bool force = false}) async {
     for (final isolate in _isolates) {
-      isolate.kill(priority: Isolate.immediate);
+      final done = ReceivePort();
+      isolate.send((force, done.sendPort));
+      await done.first;
     }
     await _first.close(force: force);
   }
@@ -59,19 +70,32 @@ Future<HttpServer> _bind(
   final ShelfHandlerBuilder builder,
   final int port, {
   required final bool shared,
+  required final ShelfTls? tls,
 }) => shelf_io.serve(
   builder(),
   InternetAddress.loopbackIPv4,
   port,
   shared: shared,
+  securityContext: tls == null
+      ? null
+      : (SecurityContext()
+          ..useCertificateChain(tls.chain)
+          ..usePrivateKey(tls.key)),
 );
 
+/// Serves until a `(force, done)` message, then closes and answers on
+/// `done`.
 Future<void> _serveInIsolate(
-  final (ShelfHandlerBuilder, int, SendPort) message,
+  final (ShelfHandlerBuilder, int, SendPort, ShelfTls?) message,
 ) async {
-  final (builder, port, ready) = message;
-  await _bind(builder, port, shared: true);
-  ready.send(null);
+  final (builder, port, ready, tls) = message;
+  final server = await _bind(builder, port, shared: true, tls: tls);
+  final control = ReceivePort();
+  ready.send(control.sendPort);
+  final (force, done) = await control.first as (bool, SendPort);
+  await server.close(force: force);
+  control.close();
+  done.send(null);
 }
 
 /// The workloads of bin/http_load.dart.

@@ -20,8 +20,8 @@
 // `baselines/` has the same routes on bare hyper, on bare Deno.serve and
 // on dusty, a Zig server on the zio relic_native runs on.
 //
-// `--tls` serves the io and native targets over TLS with relic_native's
-// test certificates. oha does not verify an https URL.
+// `--tls` serves the local targets over TLS with relic_native's test
+// certificates. oha does not verify an https URL.
 
 import 'dart:convert';
 import 'dart:io';
@@ -252,15 +252,7 @@ Future<void> main(final List<String> args) async {
   for (final spec in targets) {
     final (target, url, kind) = _split(spec);
     if (url != null) continue;
-    final parsed = _parseTarget(kind);
-    if (tls && !supportsTls(parsed.kind)) {
-      usageError(
-        'No TLS on ${parsed.kind}: $spec',
-        LoadOption.values,
-        synopsis: _synopsis,
-      );
-    }
-    local[target] = parsed;
+    local[target] = _parseTarget(kind);
   }
 
   final workloads = [
