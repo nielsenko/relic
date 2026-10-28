@@ -1,10 +1,18 @@
 // The http_load.dart routes on bare Deno.serve, as a floor for the
-// relic_fetch builds that run on the same host.
+// relic_fetch builds that run on the same host. With a certificate chain
+// and a key it serves HTTPS.
 //
 //   deno run --allow-net server.mjs 8092
 //   dart run bin/http_load.dart --targets=deno=http://127.0.0.1:8092
+//   deno run --allow-net --allow-read server.mjs 8443 \
+//       ../../../relic_native/test/certs/localhost_cert.pem \
+//       ../../../relic_native/test/certs/localhost_key.pem
 
 const port = Number(Deno.args[0] ?? 8092);
+if (Deno.args.length === 2) throw new Error('key path missing');
+const tls = Deno.args.length > 2
+  ? { cert: Deno.readTextFileSync(Deno.args[1]), key: Deno.readTextFileSync(Deno.args[2]) }
+  : {};
 const etag = '"relic-browser-1"';
 const items = JSON.stringify(
   Array.from({ length: 20 }, (_, i) => ({
@@ -24,7 +32,7 @@ function cookie(header, name) {
   return null;
 }
 
-Deno.serve({ port }, (req) => {
+Deno.serve({ port, ...tls }, (req) => {
   const path = new URL(req.url).pathname;
   const h = req.headers;
   switch (path) {
