@@ -8,6 +8,8 @@
 //       --connections=64 --seconds=5 --loads=0.5,0.75,1.0 --out=load.md
 //
 // A `shelf` target is a shelf server on dart:io with the same routes.
+// `native-handler` or `io4-handler` mounts the plaintext, headers and
+// browser routes as one plain handler, with no router in the path.
 // A target that is a URL is a server started elsewhere (Bun, for one)
 // that serves the same paths, and `name=URL` labels it in the table:
 //   --targets=io,bun=http://127.0.0.1:3000
@@ -127,7 +129,8 @@ enum LoadOption<V> implements OptionDefinition<V> {
     MultiStringOption(
       argName: 'targets',
       helpText:
-          'io, native or shelf, each with an optional isolate count, or '
+          'io, native or shelf, each with an optional isolate count, io or '
+          'native with a -handler suffix for a run without the router, or '
           'name=URL for a server started elsewhere',
       defaultsTo: ['io', 'native', 'native4'],
     ),
@@ -222,7 +225,7 @@ Future<void> main(final List<String> args) async {
   final out = config.optionalValue(LoadOption.out);
   // Every local target is read before the first run, so a bad one fails
   // fast.
-  final local = <String, ({String kind, int isolates})>{};
+  final local = <String, ({String kind, int isolates, bool router})>{};
   for (final spec in targets) {
     final (target, url) = _split(spec);
     if (url != null) continue;
@@ -314,29 +317,38 @@ Future<void> main(final List<String> args) async {
   return (spec, null);
 }
 
-/// The server kind and isolate count in [target]: `io`, `native` or
-/// `shelf`, or one of them followed by an isolate count. Anything else is
-/// a usage error.
-({String kind, int isolates}) _parseTarget(final String target) {
-  final match = RegExp(r'^(io|native|shelf)(\d*)$').firstMatch(target);
-  if (match == null) {
+/// The server kind, isolate count and router in [target]: `io`, `native`
+/// or `shelf`, or one of them followed by an isolate count, and `-handler`
+/// on io or native for the routes as one handler with no router. Anything
+/// else is a usage error.
+({String kind, int isolates, bool router}) _parseTarget(final String target) {
+  final match = RegExp(
+    r'^(io|native|shelf)(\d*)(-handler)?$',
+  ).firstMatch(target);
+  if (match == null || (match.group(3) != null && match.group(1) == 'shelf')) {
     usageError('Not a target: $target', LoadOption.values, synopsis: _synopsis);
   }
-  return (kind: match.group(1)!, isolates: int.tryParse(match.group(2)!) ?? 1);
+  return (
+    kind: match.group(1)!,
+    isolates: int.tryParse(match.group(2)!) ?? 1,
+    router: match.group(3) == null,
+  );
 }
 
 /// A server for [target], as [_parseTarget] read it.
 Future<Server> _start(
-  final ({String kind, int isolates}) target, {
+  final ({String kind, int isolates, bool router}) target, {
   required final bool tls,
 }) {
-  final (:kind, :isolates) = target;
+  final (:kind, :isolates, :router) = target;
   // Port 0 with several dart:io isolates gives each its own port and
   // the server reports the first one, so the dart:io targets take a fixed
   // port.
   return startServer(
     kind,
-    Served.app(loadApp(), shelfLoad),
+    router
+        ? Served.app(loadApp(), shelfLoad)
+        : Served.handler(loadHandler(), shelfLoad),
     port: kind == 'native' ? 0 : 18080,
     isolates: isolates,
     tls: tls,
