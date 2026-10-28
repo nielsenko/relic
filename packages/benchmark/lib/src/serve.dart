@@ -47,9 +47,6 @@ var _serveCount = 0;
   );
 }
 
-/// Whether [kind] can serve over TLS. Shelf cannot.
-bool supportsTls(String kind) => kind != 'shelf';
-
 /// Starts [served] on [kind], `io`, `native` or `shelf`, at [port] on the
 /// IPv4 loopback with [isolates] isolates, over TLS with
 /// [testCertificates] when [tls] is set.
@@ -63,9 +60,6 @@ Future<Server> startServer(
   bool tls = false,
 }) async {
   final address = InternetAddress.loopbackIPv4;
-  if (tls && !supportsTls(kind)) {
-    throw ArgumentError.value(kind, 'kind', 'No TLS on $kind');
-  }
   final certs = tls ? testCertificates : null;
   switch (kind) {
     case 'shelf':
@@ -73,6 +67,7 @@ Future<Server> startServer(
         served.shelf,
         port: port,
         isolates: isolates,
+        tls: certs,
       );
       return (port: server.port, close: () => server.close(force: true));
     case 'io':
