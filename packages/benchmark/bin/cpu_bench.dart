@@ -1,6 +1,9 @@
 // Starts a server command, drives it with oha, and reports the server's
 // CPU time per request as user and system time, read from the kernel's
-// per-process counters over the load window. Needs `oha` on the PATH.
+// per-process counters over the load window, and on macOS the
+// instructions and cycles retired per request in thousands, which do not
+// move with the machine's load the way time does. Needs `oha` on the
+// PATH.
 //
 //   dart run bin/cpu_bench.dart -- dart run bin/load_serve.dart native 1
 //   dart run bin/cpu_bench.dart --connections=64 --seconds=10 -- ./hello 4
@@ -119,13 +122,17 @@ Future<void> main(final List<String> args) async {
     final user = (after.user - before.user) / 1e9;
     final system = (after.system - before.system) / 1e9;
     final count = result.responses;
+    final instructions = after.instructions - before.instructions;
+    final cycles = after.cycles - before.cycles;
     stdout.writeln(
       '| $label | ${result.rps.round()} | ${result.p50.toStringAsFixed(2)} | '
       '${result.p99.toStringAsFixed(2)} | '
       '${((user + system) / seconds * 100).round()}% | '
       '${(user / count * 1e6).toStringAsFixed(1)} | '
       '${(system / count * 1e6).toStringAsFixed(1)} | '
-      '${((user + system) / count * 1e6).toStringAsFixed(1)} |',
+      '${((user + system) / count * 1e6).toStringAsFixed(1)} | '
+      '${instructions == 0 ? '-' : (instructions / count / 1e3).toStringAsFixed(1)} | '
+      '${cycles == 0 ? '-' : (cycles / count / 1e3).toStringAsFixed(1)} |',
     );
   } finally {
     // A shim that exits after spawning the server leaves the server holding
@@ -187,41 +194,57 @@ Future<bool> _answers(final String url) async {
   }
 }
 
-/// User and system CPU time in nanoseconds, summed over [pids].
-Future<({int user, int system})> _cpuTime(final List<int> pids) async {
+typedef _Usage = ({int user, int system, int instructions, int cycles});
+
+/// User and system CPU time in nanoseconds, and the instructions and
+/// cycles retired where the kernel counts them, summed over [pids].
+Future<_Usage> _cpuTime(final List<int> pids) async {
   var user = 0;
   var system = 0;
+  var instructions = 0;
+  var cycles = 0;
   for (final pid in pids) {
     final t = Platform.isMacOS ? _rusageMacOS(pid) : await _statLinux(pid);
     user += t.user;
     system += t.system;
+    instructions += t.instructions;
+    cycles += t.cycles;
   }
-  return (user: user, system: system);
+  return (
+    user: user,
+    system: system,
+    instructions: instructions,
+    cycles: cycles,
+  );
 }
 
 typedef _ProcPidRusageC = Int32 Function(Int32, Int32, Pointer<Uint8>);
 typedef _ProcPidRusage = int Function(int, int, Pointer<Uint8>);
 
-/// The user and system times of [pid] from `proc_pid_rusage` with
-/// `RUSAGE_INFO_V0`.
+/// The user and system times, instructions and cycles of [pid] from
+/// `proc_pid_rusage` with `RUSAGE_INFO_V4`.
 ///
-/// The struct is a 16 byte uuid, then the user and system times in Mach
-/// absolute time units, nanoseconds on Intel and scaled on Apple silicon.
-({int user, int system}) _rusageMacOS(final int pid) {
+/// The struct is a 16 byte uuid, then 64-bit words: the user and system
+/// times in Mach absolute time units, nanoseconds on Intel and scaled on
+/// Apple silicon, come first, `ri_instructions` and `ri_cycles` are words
+/// 31 and 32 (`struct rusage_info_v4`, sys/resource.h).
+_Usage _rusageMacOS(final int pid) {
   final rusage = DynamicLibrary.process()
       .lookupFunction<_ProcPidRusageC, _ProcPidRusage>('proc_pid_rusage');
-  final buffer = calloc<Uint8>(256);
+  final buffer = calloc<Uint8>(512);
   try {
-    if (rusage(pid, 0, buffer) != 0) {
+    if (rusage(pid, 4, buffer) != 0) {
       // A shim in the tree that has exited since the tree was taken.
       stderr.writeln('proc_pid_rusage failed for pid $pid, counted as 0');
-      return (user: 0, system: 0);
+      return (user: 0, system: 0, instructions: 0, cycles: 0);
     }
     final words = buffer.cast<Uint64>();
     final scale = _machTimebase();
     return (
       user: (words[2] * scale).round(),
       system: (words[3] * scale).round(),
+      instructions: words[31],
+      cycles: words[32],
     );
   } finally {
     calloc.free(buffer);
@@ -247,7 +270,7 @@ double _machTimebase() {
 
 /// The user and system times of [pid], fields 14 and 15 of
 /// `/proc/<pid>/stat`, converted from clock ticks to nanoseconds.
-Future<({int user, int system})> _statLinux(final int pid) async {
+Future<_Usage> _statLinux(final int pid) async {
   final stat = await File('/proc/$pid/stat').readAsString();
   // The command name is in parentheses and may hold spaces.
   final fields = stat.substring(stat.lastIndexOf(')') + 2).split(' ');
@@ -255,6 +278,8 @@ Future<({int user, int system})> _statLinux(final int pid) async {
   return (
     user: int.parse(fields[11]) * nsPerTick,
     system: int.parse(fields[12]) * nsPerTick,
+    instructions: 0,
+    cycles: 0,
   );
 }
 
