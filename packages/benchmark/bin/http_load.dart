@@ -8,7 +8,8 @@
 //       --connections=64 --seconds=5 --loads=0.5,0.75,1.0 --out=load.md
 //
 // `--saturation-runs=5` finds the saturation rate as the mean of five
-// closed-loop runs.
+// closed-loop runs. Every run goes into the JSON as `saturationRuns`, so
+// the spread behind the rate can be read later.
 //
 // A `shelf` target is a shelf server on dart:io with the same routes.
 // `native-handler` or `io4-handler` mounts the plaintext, headers and
@@ -78,6 +79,10 @@ final class Measurement {
   /// time could not be read.
   final double? cores;
 
+  /// The closed-loop rates whose mean is the saturation rate this run's
+  /// [offeredRps] is a fraction of.
+  final List<int> saturationRuns;
+
   Measurement({
     required this.target,
     required this.workload,
@@ -90,6 +95,7 @@ final class Measurement {
     required this.errors,
     required this.nonOk,
     required this.cores,
+    required this.saturationRuns,
   });
 
   Map<String, Object> toJson() => {
@@ -104,6 +110,7 @@ final class Measurement {
     'errors': errors,
     'nonOk': nonOk,
     'cores': ?cores,
+    'saturationRuns': saturationRuns,
   };
 }
 
@@ -267,7 +274,10 @@ Future<void> main(final List<String> args) async {
         final sat =
             (closedLoop.reduce((final a, final b) => a + b) / closedLoop.length)
                 .round();
-        stderr.writeln('  ${workload.name}: saturates at $sat rps');
+        stderr.writeln(
+          '  ${workload.name}: saturates at $sat rps, '
+          'runs ${closedLoop.join(' ')}',
+        );
         for (final load in loads) {
           final offered = (sat * load).round();
           await meter?.begin();
@@ -293,6 +303,7 @@ Future<void> main(final List<String> args) async {
               errors: run.failed,
               nonOk: run.nonOk,
               cores: cores,
+              saturationRuns: closedLoop,
             ),
           );
           stderr.writeln(
