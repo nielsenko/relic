@@ -99,7 +99,8 @@ pub fn build(b: *std.Build) void {
             \\
         ),
     });
-    const tests = b.addTest(.{ .root_module = test_module });
+    const filter = b.option([]const u8, "test-filter", "Run the tests whose name holds this") orelse "";
+    const tests = b.addTest(.{ .root_module = test_module, .filters = &.{filter} });
     b.step("test", "Run the native unit tests").dependOn(&b.addRunArtifact(tests).step);
 
     // The hello route on zio alone, the baseline the adapter's cost is
