@@ -28,6 +28,11 @@ import 'package:benchmark/src/shelf_server.dart';
 import 'package:config/config.dart';
 
 /// What a browser sends, Cookie included, for the headers workload.
+const _browserWithValidator = [
+  ..._browserHeaders,
+  'If-None-Match: "33a64df551425fcc55e4d42a148795d9f25f89d4"',
+];
+
 const _browserHeaders = [
   'Host: localhost',
   'Connection: keep-alive',
@@ -58,19 +63,24 @@ final class Workload {
   final String name;
   final String path;
   final List<String> headers;
-  const Workload(this.name, this.path, [this.headers = const []]);
+
+  /// The body of a POST, or null for a GET.
+  final String? body;
+  const Workload(this.name, this.path, [this.headers = const [], this.body]);
 }
 
-const _workloads = [
-  Workload('plaintext', '/plaintext'),
-  Workload('json', '/json'),
-  Workload('headers', '/headers', _browserHeaders),
-  Workload('browser', '/browser', [
-    ..._browserHeaders,
-    'If-None-Match: "33a64df551425fcc55e4d42a148795d9f25f89d4"',
-  ]),
-  Workload('alloc', '/alloc'),
-  Workload('mixed', '/mixed'),
+const _jsonBody = ['Content-Type: application/json'];
+
+final _workloads = [
+  const Workload('plaintext', '/plaintext'),
+  const Workload('json', '/json'),
+  const Workload('headers', '/headers', _browserHeaders),
+  const Workload('browser', '/browser', _browserWithValidator),
+  const Workload('browser-json', '/browser-json', _browserWithValidator),
+  const Workload('browser-utf8', '/browser-utf8', _browserWithValidator),
+  Workload('read-string', '/read-string', _jsonBody, readDocument),
+  const Workload('alloc', '/alloc'),
+  const Workload('mixed', '/mixed'),
 ];
 
 final class Measurement {
@@ -185,9 +195,9 @@ enum LoadOption<V> implements OptionDefinition<V> {
   final ConfigOptionBase<V> option;
 }
 
-void _knownWorkloads(List<String> names) {
+void _knownWorkloads(final List<String> names) {
   for (final name in names) {
-    if (!_workloads.any((w) => w.name == name)) {
+    if (!_workloads.any((final w) => w.name == name)) {
       throw FormatException('Unknown workload: $name');
     }
   }
@@ -197,12 +207,12 @@ final class _DoubleParser extends ValueParser<double> {
   const _DoubleParser();
 
   @override
-  double parse(String value) => double.parse(value);
+  double parse(final String value) => double.parse(value);
 }
 
 const _synopsis = 'usage: dart run bin/http_load.dart [options]';
 
-Future<void> main(List<String> args) async {
+Future<void> main(final List<String> args) async {
   final config = resolveOptions(LoadOption.values, args, synopsis: _synopsis);
   final targets = config.value(LoadOption.targets);
   final connections = config.value(LoadOption.connections);
@@ -229,7 +239,7 @@ Future<void> main(List<String> args) async {
 
   final workloads = [
     for (final name in config.value(LoadOption.workloads))
-      _workloads.firstWhere((w) => w.name == name),
+      _workloads.firstWhere((final w) => w.name == name),
   ];
   final results = <Measurement>[];
   for (final spec in targets) {
@@ -288,7 +298,7 @@ Future<void> main(List<String> args) async {
     File('${out.replaceAll(RegExp(r'\.md$'), '')}.json').writeAsStringSync(
       const JsonEncoder.withIndent(
         '  ',
-      ).convert(results.map((m) => m.toJson()).toList()),
+      ).convert(results.map((final m) => m.toJson()).toList()),
     );
   }
 }
@@ -297,7 +307,7 @@ Future<void> main(List<String> args) async {
 ///
 /// `io`, `native4` or `shelf` starts a server here. `http://host:port` is
 /// a server started elsewhere, and `name=http://host:port` labels it.
-(String, String?) _split(String spec) {
+(String, String?) _split(final String spec) {
   final at = spec.indexOf('=');
   if (at > 0) return (spec.substring(0, at), spec.substring(at + 1));
   if (spec.startsWith('http')) return (spec, spec);
@@ -307,7 +317,7 @@ Future<void> main(List<String> args) async {
 /// The server kind and isolate count in [target]: `io`, `native` or
 /// `shelf`, or one of them followed by an isolate count. Anything else is
 /// a usage error.
-({String kind, int isolates}) _parseTarget(String target) {
+({String kind, int isolates}) _parseTarget(final String target) {
   final match = RegExp(r'^(io|native|shelf)(\d*)$').firstMatch(target);
   if (match == null) {
     usageError('Not a target: $target', LoadOption.values, synopsis: _synopsis);
@@ -317,8 +327,8 @@ Future<void> main(List<String> args) async {
 
 /// A server for [target], as [_parseTarget] read it.
 Future<Server> _start(
-  ({String kind, int isolates}) target, {
-  required bool tls,
+  final ({String kind, int isolates}) target, {
+  required final bool tls,
 }) {
   final (:kind, :isolates) = target;
   // Port 0 with several dart:io isolates gives each its own port and
@@ -338,20 +348,25 @@ Future<Server> _start(
 /// A null [rate] is a closed loop at [connections] in flight, otherwise an
 /// open loop at that many requests per second.
 Future<OhaResult> _oha(
-  String base,
-  Workload workload,
-  int connections,
-  int seconds,
-  int? rate,
+  final String base,
+  final Workload workload,
+  final int connections,
+  final int seconds,
+  final int? rate,
 ) => runOha(
   '$base${workload.path}',
   connections: connections,
   seconds: seconds,
   rate: rate,
   headers: workload.headers,
+  body: workload.body,
 );
 
-String _markdown(List<Measurement> results, int connections, int seconds) {
+String _markdown(
+  final List<Measurement> results,
+  final int connections,
+  final int seconds,
+) {
   final buffer = StringBuffer()
     ..writeln('$connections connections, ${seconds}s per run, latency in ms.')
     ..writeln()
