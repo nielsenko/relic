@@ -39,6 +39,7 @@
 //! events or a timer is due. Under load the isolate never gets there.
 
 const std = @import("std");
+const perfcount = @import("perfcount");
 const builtin = @import("builtin");
 const zio = @import("zio");
 const tls = @import("tls");
@@ -419,7 +420,116 @@ fn postLastEvent(ex: *Exchange) void {
 }
 
 /// One per isolate, on that isolate's thread.
+/// Instruction and cycle counts of the reactor's thread, split by phase,
+/// for a library built with `-Dperfcount=true` and run under kperf-bless.
+/// A mark ends the period since the previous mark and charges it to a
+/// phase: `tick` is the reactor inside relic_reactor_tick less the parse
+/// and write marks, `parse` is parseHead, `write` the response flush, and
+/// `between` everything outside the tick, which is Dart. The report goes
+/// to stderr when the reactor is destroyed. Off, every call is empty.
+const Probe = struct {
+    counters: perfcount.Counters = undefined,
+    open: bool = false,
+    last: perfcount.Sample = .{},
+    overhead: perfcount.Sample = .{},
+    thread: std.Thread.Id = 0,
+    /// Periods that crossed a thread change or failed to read.
+    lost: u64 = 0,
+    /// Whether the parse and write marks inside a tick are taken. A read
+    /// costs about as much as a parse, so `RELIC_PROBE_PHASES=0` leaves
+    /// them out and the tick is one period.
+    phases: bool = true,
+    acc: std.EnumArray(Phase, Acc) = .initFill(.{}),
+
+    /// `calibrate` is an empty period, two marks back to back after the
+    /// parse marks, so the cost a mark leaves behind in situ is known.
+    const Phase = enum { tick, parse, write, between, calibrate };
+    const Acc = struct { n: u64 = 0, instructions: u64 = 0, cycles: u64 = 0 };
+
+    fn init(self: *Probe) void {
+        if (!perfcount.enabled) return;
+        var scope: perfcount.Scope = .user_kernel;
+        if (std.c.getenv("RELIC_PROBE_SCOPE")) |s| {
+            if (std.mem.eql(u8, std.mem.span(s), "user")) scope = .user;
+        }
+        if (std.c.getenv("RELIC_PROBE_PHASES")) |s| {
+            if (std.mem.eql(u8, std.mem.span(s), "0")) self.phases = false;
+        }
+        var events: std.EnumSet(perfcount.Event) = .initOne(.instructions);
+        events.insert(.cycles);
+        self.counters = perfcount.Counters.open(.{ .events = events, .scope = scope, .coverage = .thread }) catch |err| {
+            std.debug.print("RELIC-PROBE open failed: {t}\n", .{err});
+            return;
+        };
+        self.open = true;
+        // What a mark itself costs: the floor of back-to-back reads.
+        var prev = self.counters.read() catch return;
+        for (0..32) |round| {
+            const now = self.counters.read() catch return;
+            const d = now.since(prev, .{});
+            if (round == 0) {
+                self.overhead = d;
+            } else {
+                for (std.enums.values(perfcount.Event)) |e| {
+                    const v = d.get(e) orelse continue;
+                    if (v < self.overhead.get(e).?) self.overhead.counts.set(e, v);
+                }
+            }
+            prev = now;
+        }
+        self.last = prev;
+        self.thread = std.Thread.getCurrentId();
+    }
+
+    /// A mark inside a tick, taken when `phases` is on.
+    fn markPhase(self: *Probe, phase: Phase) void {
+        if (!perfcount.enabled) return;
+        if (self.phases) self.mark(phase);
+    }
+
+    /// Ends the period since the last mark and charges it to `phase`.
+    fn mark(self: *Probe, phase: Phase) void {
+        if (!perfcount.enabled) return;
+        if (!self.open) return;
+        const now = self.counters.read() catch {
+            self.lost += 1;
+            return;
+        };
+        const tid = std.Thread.getCurrentId();
+        if (tid == self.thread) {
+            const d = now.since(self.last, self.overhead);
+            const a = self.acc.getPtr(phase);
+            a.n += 1;
+            a.instructions += d.get(.instructions) orelse 0;
+            a.cycles += d.get(.cycles) orelse 0;
+        } else {
+            self.lost += 1;
+            self.thread = tid;
+        }
+        self.last = now;
+    }
+
+    fn report(self: *Probe) void {
+        if (!perfcount.enabled) return;
+        if (!self.open) return;
+        std.debug.print("RELIC-PROBE backend={t} phases={d} overhead_instructions={d} overhead_cycles={d} lost={d}\n", .{
+            self.counters.backend(),
+            @intFromBool(self.phases),
+            self.overhead.get(.instructions) orelse 0,
+            self.overhead.get(.cycles) orelse 0,
+            self.lost,
+        });
+        for (std.enums.values(Phase)) |phase| {
+            const a = self.acc.get(phase);
+            std.debug.print("RELIC-PROBE {t} n={d} instructions={d} cycles={d}\n", .{ phase, a.n, a.instructions, a.cycles });
+        }
+        self.counters.close();
+        self.open = false;
+    }
+};
+
 pub const Reactor = struct {
+    probe: Probe = .{},
     gpa: std.mem.Allocator,
     server: *Server,
     slot: u32,
@@ -1600,10 +1710,14 @@ fn serveRequests(c: *Connection) !void {
             _ = r.idle.fetchAdd(1, .monotonic);
         };
 
+        r.probe.markPhase(.tick);
         const index = parseHead(head, &buffers.head_copy, &buffers.slots) catch |err| switch (err) {
             error.TooManyHeaders => return writeStatusAndClose(link, "431 Request Header Fields Too Large"),
             error.MalformedHead => return writeStatusAndClose(link, "400 Bad Request"),
         };
+        r.probe.markPhase(.parse);
+        r.probe.markPhase(.tick);
+        r.probe.markPhase(.calibrate);
         var req: std.http.Server.Request = .{ .server = http, .head_buffer = head, .head = index.head };
         const target_off = off(head, req.head.target);
         const target_len: u32 = @intCast(req.head.target.len);
@@ -1735,8 +1849,10 @@ fn serveRequests(c: *Connection) !void {
             link.setWriteTimeout(.none);
             conn.arm(options.write_timeout_ms);
             w.end = ex.resp_inline_len;
+            r.probe.markPhase(.tick);
             try w.flush();
             conn.disarm();
+            r.probe.markPhase(.write);
             link.setWriteTimeout(inactivity(options.write_timeout_ms));
         } else if (ex.resp_body_len > swept_write_max) {
             if (ex.resp_head) |p| try w.writeAll(p[0..ex.resp_head_len]);
@@ -3194,6 +3310,7 @@ fn createReactor(srv: *Server, port: dart.Dart_Port_DL) !*Reactor {
     r.* = .{ .gpa = gpa, .server = srv, .slot = no_slot, .port = port, .rt = rt };
     r.incoming.init();
     r.resumes.init();
+    r.probe.init();
     if (!r.poke.init()) return error.PokeFailed;
     errdefer r.poke.deinit();
     r.host_handle = rt.main_executor.loop.hostHandle();
@@ -3307,6 +3424,7 @@ export fn relic_reactor_destroy(r: *Reactor) void {
     r.freeSpareBuffersBut(0);
     r.rt.deinit();
     r.events.deinit(r.gpa);
+    r.probe.report();
     const gpa = r.gpa;
     gpa.destroy(r);
 
@@ -3334,6 +3452,8 @@ export fn relic_reactor_destroy(r: *Reactor) void {
 /// exchanges that are ready for a handler. Afterwards
 /// relic_reactor_pending says whether to call again at once.
 export fn relic_reactor_tick(r: *Reactor, wait_ms: u32, out: [*]*ExchangeView, max: u32) u32 {
+    r.probe.mark(.between);
+    defer r.probe.mark(.tick);
     const executor = &r.rt.main_executor;
     // The drains spawn tasks, which needs a binding, and the tick keeps
     // it, so what they spawn runs in this tick.
