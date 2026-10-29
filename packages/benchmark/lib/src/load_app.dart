@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:relic/relic.dart';
 
@@ -34,7 +35,13 @@ RelicApp loadApp() {
         ),
       );
     })
-    ..get('/browser', _browser)
+    ..get('/browser', (req) => _browser(req, _concatBody))
+    ..get('/browser-json', (req) => _browser(req, _jsonEncodeBody))
+    ..get('/browser-utf8', (req) => _browser(req, _utf8JsonBody))
+    ..post('/read-string', (req) async {
+      final doc = jsonDecode(await req.readAsString()) as Map<String, dynamic>;
+      return _count((doc['items'] as List<dynamic>).length);
+    })
     ..get('/alloc', (req) {
       // Garbage per request: a few thousand short-lived objects and a
       // 64 KiB string built from them.
@@ -54,8 +61,12 @@ RelicApp loadApp() {
 /// A page handler on a real browser head.
 ///
 /// It reads the host, a cookie and the validator, and answers with etag,
-/// cache-control and 1 KB of JSON, or 304 when the validator matches.
-Response _browser(Request req) {
+/// cache-control and 1 KB of JSON built by [body], or 304 when the
+/// validator matches.
+Response _browser(
+  Request req,
+  Body Function(String? host, String? session) body,
+) {
   final host = req.headers.host?.host;
   final session = req.headers.cookie?.cookies
       .where((c) => c.name == 'session')
@@ -73,17 +84,37 @@ Response _browser(Request req) {
         ..etag = _etag
         ..cacheControl = CacheControlHeader(privateCache: true, maxAge: 60),
     ),
-    body: Body.fromString(
-      '{"host":${jsonEncode(host)},"session":${jsonEncode(session)},'
-      '"items":$_items}',
-      mimeType: MimeType.json,
-    ),
+    body: body(host, session),
   );
 }
 
 const _etag = ETagHeader(value: 'relic-browser-1');
 
-final _items = jsonEncode([
+/// The items encoded once, so the request only joins strings.
+Body _concatBody(String? host, String? session) => Body.fromString(
+  '{"host":${jsonEncode(host)},"session":${jsonEncode(session)},'
+  '"items":$_items}',
+  mimeType: MimeType.json,
+);
+
+/// The whole document through jsonEncode on every request.
+Body _jsonEncodeBody(String? host, String? session) => Body.fromString(
+  jsonEncode({'host': host, 'session': session, 'items': _itemMaps()}),
+  mimeType: MimeType.json,
+);
+
+/// The whole document as bytes from dart:convert's JsonUtf8Encoder.
+Body _utf8JsonBody(String? host, String? session) => Body.fromData(
+  JsonUtf8Encoder().convert({
+        'host': host,
+        'session': session,
+        'items': _itemMaps(),
+      })
+      as Uint8List,
+  mimeType: MimeType.json,
+);
+
+List<Map<String, Object>> _itemMaps() => [
   for (var i = 0; i < 20; i++)
     {
       'id': i,
@@ -91,4 +122,18 @@ final _items = jsonEncode([
       'tags': ['new', 'sale'],
       'price': 100 + i,
     },
-]);
+];
+
+final _items = jsonEncode(_itemMaps());
+
+/// The document the read routes are posted: the browser document with a
+/// fixed host and session, 1.2 KB.
+final String readDocument = jsonEncode({
+  'host': 'example.com',
+  'session': 'a3f9c2e1b7d4f6a8c0e2d4b6f8a1c3e5',
+  'items': _itemMaps(),
+});
+
+/// The answer of a read route: the item count, so the response costs the
+/// same on each and the body read is what differs.
+Response _count(int items) => Response.ok(body: Body.fromString('$items'));
