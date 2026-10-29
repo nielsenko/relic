@@ -14,6 +14,14 @@ pub fn build(b: *std.Build) void {
     });
     const strip = b.option(bool, "strip", "Strip debug info (used for published binaries)") orelse false;
     const sanitize_thread = b.option(bool, "sanitize-thread", "Build the unit tests under ThreadSanitizer") orelse false;
+    // Instruction and cycle counts per reactor phase, read from the PMU
+    // through perfcount (a local checkout, see build.zig.zon) for a run
+    // under kperf-bless. Off, the probe compiles to nothing.
+    const probe = b.option(bool, "perfcount", "Count instructions and cycles per reactor phase") orelse false;
+    const perfcount_module = if (probe)
+        (b.lazyDependency("perfcount", .{ .target = target, .optimize = optimize, .enabled = true }) orelse return).module("perfcount")
+    else
+        b.createModule(.{ .root_source_file = b.path("src/perfcount_off.zig"), .target = target, .optimize = optimize });
 
     // zio makes an io_uring ring SINGLE_ISSUER unless told not to, and
     // only the thread that made such a ring may enter it. The Dart VM
@@ -47,6 +55,7 @@ pub fn build(b: *std.Build) void {
     module.addImport("zio", zio.module("zio"));
     module.addImport("tls", tls.module("tls"));
     module.addImport("dart_dl", dart_dl_module);
+    module.addImport("perfcount", perfcount_module);
     module.addIncludePath(b.path("src/dart-dl"));
     module.addCSourceFile(.{ .file = b.path("src/dart-dl/dart_api_dl.c"), .flags = &.{} });
 
@@ -75,6 +84,7 @@ pub fn build(b: *std.Build) void {
     test_module.addImport("zio", zio.module("zio"));
     test_module.addImport("tls", tls.module("tls"));
     test_module.addImport("dart_dl", dart_dl_module);
+    test_module.addImport("perfcount", perfcount_module);
     test_module.addIncludePath(b.path("src/dart-dl"));
     test_module.addCSourceFile(.{ .file = b.path("src/dart-dl/dart_api_dl.c"), .flags = &.{} });
     // The TLS material in test/certs, which @embedFile cannot reach from

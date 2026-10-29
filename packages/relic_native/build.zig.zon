@@ -17,6 +17,14 @@
             .url = "git+https://github.com/nielsenko/tls.zig#0f3b2cb7af6a37d33a89a97a59ed5cb9396250ab",
             .hash = "tls-0.1.0-ER2e0nHYBgCzek0BUvu1Q6RCkEk07lRWmjM-5pxgugit",
         },
+        // perfcount, for `-Dperfcount=true` only: a measuring tool with no
+        // release, reached through a `perfcount` symlink made by hand in
+        // this directory to a checkout of zigmesh/tools/perfcount. Lazy, so
+        // a build without the option never looks for it.
+        .perfcount = .{
+            .path = "perfcount",
+            .lazy = true,
+        },
     },
     .paths = .{
         "build.zig",
