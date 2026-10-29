@@ -37,11 +37,16 @@ var _serveCount = 0;
 /// The certificate chain and key a TLS server here presents, the test
 /// certificates of relic_native. A client skips verification, or trusts
 /// `ca_cert.pem` beside them.
+///
+/// An AOT bundle has no package configuration to find them by, so it
+/// takes the directory from `RELIC_TEST_CERTS`.
 ({String chain, String key}) get testCertificates {
-  final library = Isolate.resolvePackageUriSync(
-    Uri.parse('package:relic_native/relic_native.dart'),
-  )!;
-  final certs = library.resolve('../test/certs/');
+  final fromEnvironment = Platform.environment['RELIC_TEST_CERTS'];
+  final certs = fromEnvironment != null
+      ? Directory(fromEnvironment).uri
+      : Isolate.resolvePackageUriSync(
+          Uri.parse('package:relic_native/relic_native.dart'),
+        )!.resolve('../test/certs/');
   return (
     chain: certs.resolve('localhost_cert.pem').toFilePath(),
     key: certs.resolve('localhost_key.pem').toFilePath(),
