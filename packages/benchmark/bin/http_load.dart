@@ -28,6 +28,11 @@ import 'package:benchmark/src/shelf_server.dart';
 import 'package:config/config.dart';
 
 /// What a browser sends, Cookie included, for the headers workload.
+const _browserWithValidator = [
+  ..._browserHeaders,
+  'If-None-Match: "33a64df551425fcc55e4d42a148795d9f25f89d4"',
+];
+
 const _browserHeaders = [
   'Host: localhost',
   'Connection: keep-alive',
@@ -58,19 +63,24 @@ final class Workload {
   final String name;
   final String path;
   final List<String> headers;
-  const Workload(this.name, this.path, [this.headers = const []]);
+
+  /// The body of a POST, or null for a GET.
+  final String? body;
+  const Workload(this.name, this.path, [this.headers = const [], this.body]);
 }
 
-const _workloads = [
-  Workload('plaintext', '/plaintext'),
-  Workload('json', '/json'),
-  Workload('headers', '/headers', _browserHeaders),
-  Workload('browser', '/browser', [
-    ..._browserHeaders,
-    'If-None-Match: "33a64df551425fcc55e4d42a148795d9f25f89d4"',
-  ]),
-  Workload('alloc', '/alloc'),
-  Workload('mixed', '/mixed'),
+const _jsonBody = ['Content-Type: application/json'];
+
+final _workloads = [
+  const Workload('plaintext', '/plaintext'),
+  const Workload('json', '/json'),
+  const Workload('headers', '/headers', _browserHeaders),
+  const Workload('browser', '/browser', _browserWithValidator),
+  const Workload('browser-json', '/browser-json', _browserWithValidator),
+  const Workload('browser-utf8', '/browser-utf8', _browserWithValidator),
+  Workload('read-string', '/read-string', _jsonBody, readDocument),
+  const Workload('alloc', '/alloc'),
+  const Workload('mixed', '/mixed'),
 ];
 
 final class Measurement {
@@ -349,6 +359,7 @@ Future<OhaResult> _oha(
   seconds: seconds,
   rate: rate,
   headers: workload.headers,
+  body: workload.body,
 );
 
 String _markdown(List<Measurement> results, int connections, int seconds) {

@@ -48,6 +48,7 @@ Future<OhaResult> runOha(
   required int seconds,
   int? rate,
   List<String> headers = const [],
+  String? body,
 }) async {
   final result = await Process.run('oha', [
     '--no-tui',
@@ -60,6 +61,7 @@ Future<OhaResult> runOha(
     if (rate != null) ...['-q', '$rate'],
     if (url.startsWith('https:')) '--insecure',
     for (final header in headers) ...['-H', header],
+    if (body != null) ...['-m', 'POST', '-d', body],
     url,
   ]);
   if (result.exitCode != 0) {
