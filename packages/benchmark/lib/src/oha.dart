@@ -48,6 +48,7 @@ Future<OhaResult> runOha(
   required int seconds,
   int? rate,
   List<String> headers = const [],
+  String? body,
 }) async {
   final result = await Process.run('oha', [
     '--no-tui',
@@ -60,6 +61,7 @@ Future<OhaResult> runOha(
     if (rate != null) ...['-q', '$rate'],
     if (url.startsWith('https:')) '--insecure',
     for (final header in headers) ...['-H', header],
+    if (body != null) ...['-m', 'POST', '-d', body],
     url,
   ]);
   if (result.exitCode != 0) {
@@ -70,6 +72,11 @@ Future<OhaResult> runOha(
   final percentiles = json['latencyPercentiles'] as Map<String, dynamic>;
   final statuses = json['statusCodeDistribution'] as Map<String, dynamic>;
   final errors = json['errorDistribution'] as Map<String, dynamic>;
+  // No percentiles without a response: a run with none is a dead server,
+  // not a measurement.
+  if (statuses.isEmpty) {
+    throw ProcessException('oha', [url], 'No responses from $url: $errors');
+  }
   double ms(String key) => (percentiles[key] as num) * 1000;
   var responses = 0;
   var nonOk = 0;
