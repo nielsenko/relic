@@ -13,6 +13,7 @@ import 'dart:async';
 import 'dart:ffi';
 import 'dart:io';
 
+import 'package:benchmark/src/browser_headers.dart';
 import 'package:benchmark/src/oha.dart';
 import 'package:benchmark/src/options.dart';
 import 'package:config/config.dart';
@@ -50,6 +51,15 @@ enum CpuBenchOption<V> implements OptionDefinition<V> {
       argName: 'label',
       helpText: 'The first column of the row, the command by default',
     ),
+  ),
+
+  browser(
+    FlagOption(
+      argName: 'browser',
+      helpText: 'Send the request headers of the browser workloads',
+      defaultsTo: false,
+      negatable: false,
+    ),
   );
 
   const CpuBenchOption(this.option);
@@ -80,6 +90,9 @@ Future<void> main(final List<String> args) async {
   final seconds = config.value(CpuBenchOption.seconds);
   final url = config.value(CpuBenchOption.url);
   final label = config.optionalValue(CpuBenchOption.label) ?? command.join(' ');
+  final headers = config.value(CpuBenchOption.browser)
+      ? browserWithValidator
+      : const <String>[];
 
   if (await _answers(url)) {
     stderr.writeln('Something already serves $url. Stop it first.');
@@ -94,12 +107,13 @@ Future<void> main(final List<String> args) async {
     await _waitForServer(url);
     await Future<void>.delayed(const Duration(seconds: 1));
     pids = await _processTree(server.pid);
-    await runOha(url, connections: connections, seconds: 2);
+    await runOha(url, connections: connections, seconds: 2, headers: headers);
     final before = await _cpuTime(pids);
     final result = await runOha(
       url,
       connections: connections,
       seconds: seconds,
+      headers: headers,
     );
     final after = await _cpuTime(pids);
     final user = (after.user - before.user) / 1e9;
