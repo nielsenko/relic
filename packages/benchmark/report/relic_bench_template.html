@@ -1,0 +1,455 @@
+<title>Relic Load Sweep</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Layout: one column of chart panels, each panel a horizontal bar chart sorted by its own route. */
+:root {
+  --bg: #f9f9f7;
+  --surface: #fcfcfb;
+  --fg: #0b0b0b;
+  --fg2: #52514e;
+  --muted: #898781;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --border: rgba(11,11,11,0.10);
+  --zio: #2a78d6;
+  --ioadapter: #1baf7a;
+  --other: #b3b2aa;
+  --up: #2a78d6;
+  --down: #e34948;
+  --font: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d0d0d; --surface: #1a1a19; --fg: #f0efec; --fg2: #c3c2b7;
+    --muted: #898781; --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+    --zio: #3987e5; --ioadapter: #199e70; --other: #5c5b56;
+    --up: #3987e5; --down: #e66767;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0d0d0d; --surface: #1a1a19; --fg: #f0efec; --fg2: #c3c2b7;
+  --muted: #898781; --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+  --zio: #3987e5; --ioadapter: #199e70; --other: #5c5b56;
+  --up: #3987e5; --down: #e66767;
+  color-scheme: dark;
+}
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--font);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 28px 48px;
+  line-height: 1.45;
+}
+main { max-width: 920px; margin: 0 auto; display: grid; gap: 28px; }
+header h1 { font-size: 24px; margin: 0 0 6px; text-wrap: balance; }
+header p { margin: 0; color: var(--fg2); max-width: 65ch; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; color: var(--fg2); }
+.legend span { display: inline-flex; align-items: center; gap: 7px; }
+.legend i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+.legend .notchkey { width: 12px; height: 12px; border-radius: 3px; background: var(--other); position: relative; }
+.legend .notchkey::after { content: ""; position: absolute; left: 4px; top: -2px; width: 2px; height: 16px; background: var(--fg); }
+.notch { stroke: var(--fg); stroke-width: 2; }
+.open { fill: var(--muted); }
+.tabs .tablabel { font-size: 13px; color: var(--muted); align-self: center; margin-right: 6px; }
+.lat-line { stroke-width: 2; }
+.lat-tick { stroke: var(--muted); stroke-width: 2; }
+.legend .taper { width: 12px; height: 12px; border-radius: 3px; background: linear-gradient(90deg, var(--other) 40%, transparent); }
+.legend .aot { width: 12px; height: 12px; border-radius: 3px; background: var(--zio); background-image: repeating-linear-gradient(135deg, transparent 0 3px, var(--surface) 3px 4.5px); }
+.tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+.tabs button {
+  font: inherit; font-size: 13px; padding: 6px 12px; border-radius: 6px; cursor: pointer;
+  background: transparent; color: var(--fg2); border: 1px solid var(--border);
+}
+.tabs button[aria-pressed="true"] { background: var(--surface); color: var(--fg); border-color: var(--axis); }
+.tabs button:focus-visible { outline: 2px solid var(--zio); outline-offset: 2px; }
+.panel { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 18px 20px 14px; min-width: 0; }
+.panel h2 { font-size: 15px; margin: 0; }
+ul.method { margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.5; color: var(--fg2); }
+ul.method li { margin: 4px 0; }
+.panel p.sub { margin: 2px 0 12px; font-size: 13px; color: var(--muted); }
+svg { width: 100%; height: auto; display: block; overflow: visible; font-family: var(--font); }
+svg text { fill: var(--fg2); font-size: 12px; }
+svg text.name { fill: var(--fg); font-family: var(--mono); font-size: 12px; }
+svg text.val { fill: var(--fg); font-variant-numeric: tabular-nums; }
+svg text.tick { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+svg line.grid { stroke: var(--grid); stroke-width: 1; }
+svg line.base { stroke: var(--axis); stroke-width: 1; }
+svg rect.bar { rx: 0; }
+svg g.row:hover rect.bar { filter: brightness(1.12); }
+svg g.row { cursor: default; }
+.tip {
+  position: fixed; pointer-events: none; background: var(--fg); color: var(--bg);
+  font-size: 12px; padding: 6px 9px; border-radius: 5px; max-width: 260px; z-index: 5;
+  font-variant-numeric: tabular-nums; white-space: pre-line;
+}
+details { font-size: 13px; color: var(--fg2); }
+details summary { cursor: pointer; color: var(--fg); }
+.tablewrap { overflow-x: auto; margin-top: 10px; }
+table { border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 4px 12px 4px 0; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+td.n, th.n { text-align: right; }
+@media (prefers-reduced-motion: no-preference) { .tabs button, svg rect.bar { transition: all 120ms ease; } }
+</style>
+
+<main>
+<header>
+  <h1>Relic Load Sweep</h1>
+  <p>Closed-loop saturation, 64 connections, the mean of SATRUNS runs with the spread of those runs as a tapered bar end. Every target ran on its own in the night of 2026-10-30, with the machine left to go quiet between targets, oha on 4 threads on the same 8-core Mac as the server. hyper runs 1, 2 or 4 tokio workers, dusty 1, 2 or 4 executors, the Dart servers 1, 2 or 4 isolates, so a four-way server plus oha stays within the 8 cores. Bars are requests per second; hover a bar for the exact figures, the deviation and the cores each route kept busy.</p>
+</header>
+
+<div class="legend" id="legend">
+  <span><i style="background:var(--zio)"></i>relic-native (Relic on zio)</span>
+  <span><i style="background:var(--ioadapter)"></i>relic-io (Relic IOAdapter on dart:io)</span>
+  <span><i style="background:var(--other)"></i>hyper, dusty, deno, shelf</span>
+  <span><i class="aot"></i>AOT build (hatched)</span>
+  <span><i class="taper"></i>tapered end: one standard deviation of the closed-loop runs either side of the mean</span>
+  <span><i class="notchkey"></i>notch: what the open-loop run at the saturation rate delivered; it is never more, and a figure is printed when it fell over 10% short</span>
+</div>
+
+<div class="tabs" id="transport" role="group" aria-label="Transport">
+  <button id="tr-http" aria-pressed="true" data-t="http">HTTP</button>
+  <button id="tr-https" aria-pressed="false" data-t="https">HTTPS (TLS 1.3, relic_native test certificate)</button>
+</div>
+<div class="tabs" id="tabs" role="group" aria-label="Isolate count filter">
+  <button id="tab-all" aria-pressed="true" data-f="all">All targets</button>
+  <button id="tab-one" aria-pressed="false" data-f="1">One isolate or thread</button>
+  <button id="tab-two" aria-pressed="false" data-f="2">Two</button>
+  <button id="tab-four" aria-pressed="false" data-f="4">Four</button>
+</div>
+
+<section class="panel" id="p-plaintext"><h2>Plaintext</h2><p class="sub">GET /plaintext, 13-byte body, no request headers to parse. Sorted by this route.</p><div class="chart"></div></section>
+<section class="panel" id="p-headers"><h2>Headers</h2><p class="sub">GET /headers, parses and re-emits a set of typed request headers. Sorted by this route.</p><div class="chart"></div></section>
+<section class="panel" id="p-browser"><h2>Browser</h2><p class="sub">GET /browser, a browser-like request with cookies, Accept-Language and Sec-Fetch headers. Sorted by this route.</p><div class="chart"></div></section>
+<div class="tabs" id="lroute" role="group" aria-label="Latency route">
+  <span class="tablabel">Latency on</span>
+  <button data-r="plaintext" aria-pressed="false">plaintext</button>
+  <button data-r="headers" aria-pressed="true">headers</button>
+  <button data-r="browser" aria-pressed="false">browser</button>
+</div>
+<section class="panel" id="p-lat-load"><h2>p99 latency under load</h2><p class="sub">Each row runs from p99 at 50 percent of the saturation rate (hollow) through 75 (filled) to TOPLOAD percent (ringed), offered in open loop, on a log scale. A flat row serves close to its peak without queueing; a long one is queueing on the way there. Sorted by p99 at 75 percent.</p><div class="chart"></div></section>
+<section class="panel" id="p-lat-75"><h2>Latency at 75 percent of saturation</h2><p class="sub">The sustainable point on every target, free of ceiling effects: p99 as the dot, p50 and p99.9 as the ticks either side, log scale. oha's own scheduling pauses of about 300 ms land on in-flight requests, so p99.9 is soft. Sorted by p99.</p><div class="chart"></div></section>
+<section class="panel" id="p-cores"><h2>Cores busy at saturation</h2><p class="sub">CPU time of the server process over the plaintext run divided by its wall time. oha and the server share the 8 cores; a four-way server sits near 3 at 64 connections. Sorted by cores.</p><div class="chart"></div></section>
+<section class="panel" id="p-tls"><h2>TLS cost</h2><p class="sub">Change in rps when the same server serves HTTPS instead of HTTP. oha holds the 64 connections open, so this is per-request record cost, not handshakes.</p><div class="chart"></div></section>
+<section class="panel" id="p-aot"><h2>AOT versus JIT</h2><p class="sub">Change in rps when the same server runs as a dart build cli bundle instead of under the JIT. Positive means AOT is faster.</p><div class="chart"></div></section>
+
+<section class="panel" id="method"><h2>Machine and method</h2>
+<p class="sub">What every number on this page was measured on and how.</p>
+<ul class="method">
+  <li><b>Machine.</b> MacBook Pro 16-inch 2019 (MacBookPro16,1), Intel Core i9-9980HK at 2.4 GHz, 8 physical cores, 16 logical, 32 GB, macOS 26.7.1. Server and load tool run on this one machine over loopback.</li>
+  <li><b>Load tool.</b> oha 1.16.0 with 64 connections kept open, HTTP/1.1 keep-alive, on 4 worker threads. Saturation is closed loop (each connection sends the next request as soon as the response arrives) for 5 seconds, taken as the mean of SATRUNS runs. Then one open-loop run at each of LOADLIST percent of that rate gives the latency columns and the delivered rates; the bars show the saturation rate.</li>
+  <li><b>Isolation.</b> One target per run of the sweep. Before each target the script waits for the one-minute load average to drop under 1.5, and pauses 60 seconds after it. The sweep ran SWEEPDATES.</li>
+  <li><b>Cores.</b> CPU time of the server process (user plus system, from the kernel's per-process counters) over the run divided by its wall time. A one-way server plus oha stays under 5 of the 8 cores, a four-way server under 8, though at the ceiling the kernel work on oha's side leaves a four-way server at 2.5 to 3 cores. dart:io servers show more than 1 because of their separate event-handler thread.</li>
+  <li><b>Threads.</b> hyper runs 1, 2 or 4 tokio workers (a current-thread runtime for 1), dusty 1, 2 or 4 zio executors, the Dart servers 1, 2 or 4 isolates each with its own listener on a shared port.</li>
+  <li><b>Routes.</b> /plaintext answers 13 bytes with no request headers read. /headers reads User-Agent, Accept-Language and a cookie from a browser-like request and answers their lengths. /browser reads Host, a cookie and If-None-Match and answers 1 KB of JSON with ETag and Cache-Control, or 304 when the validator matches. oha sends an If-None-Match that never matches, so every request builds the full page.</li>
+  <li><b>TLS.</b> TLS 1.3 with the relic_native test certificate (ECDSA P-256). The 64 connections stay open, so the HTTPS rows cost per record, not per handshake. hyper uses rustls, dusty tls.zig, deno its built-in, the Dart servers SecureSocket (dart:io) or tls.zig (relic_native).</li>
+  <li><b>Software.</b> Dart 3.13.7, Relic 2.0.0-rc.2 at main 0d1f5260 with the chore-benchmark-sweep branch; AOT rows are dart build cli bundles of the same servers. hyper 1.12.0 on tokio 1.53.2 with rustls 0.23.45, rustc 1.99.1. dusty on Zig 0.17.0 and the same zio commit relic_native pins. Deno 2.9.6. shelf on dart:io HttpServer.</li>
+  <li><b>Ceiling.</b> Above about 140k requests per second the machine, not the server, sets the rate: oha on 4 threads is itself CPU-bound at 3.7 cores there, and the kernel spends about 45 us per request across both ends of each connection, so the 8 physical cores are used up with the server at 2.5 to 3 cores. Plaintext on two or more threads lands anywhere between 140k and 190k with no stable order (a server over TLS can come out above the same server without, two threads above four), and the open-loop run at that rate falls 10 to 30 percent short of it. Doubling oha's threads or the connections changes none of this. Compare servers on the one-way rows and on the header routes; the multi-way plaintext bars show the ceiling.</li>
+  <li><b>Open loop check.</b> After the closed-loop saturation, oha offers that same rate in open loop; a notch on every bar marks what it delivered, the table's last column and the hover give the figure.NINETY The notch is never above the mean, since oha offers exactly that rate. A shortfall over 10 percent also prints the figure beside the bar: offering exactly the capacity leaves no slack for the load tool's own timing, which costs most where latency is lowest, on the two-way and four-way rows at the machine's ceiling. SAFER</li>
+  <li><b>Spread.</b> Every bar is the mean of SATRUNS closed-loop runs, and its end tapers from one standard deviation below the mean to one above, so a crisp end is a repeatable figure and a soft one is not. The hover and the table give the deviation. Differences between two bars inside their tapers are noise.</li>
+</ul></section>
+
+<details>
+  <summary>All numbers as a table</summary>
+  <div class="tablewrap"><table id="tbl"><thead><tr><th>target</th><th>what runs</th><th>mode</th><th>transport</th><th class="n">plaintext</th><th class="n">headers</th><th class="n">browser</th><th class="n">deviation</th><th class="n">cores</th><th class="n">open loop</th></tr></thead><tbody></tbody></table></div>
+</details>
+</main>
+
+<div class="tip" id="tip" hidden></div>
+
+<script>
+const rows = [
+  {"name": "dusty4-tls", "what": "bare Zig on zio, 4 executors", "mode": "native", "fam": "other", "iso": 4, "tls": true, "plaintextP50": [0.36, 0.44, null, null, 0.44], "plaintextP99": [0.88, 1.15, null, null, 1.12], "plaintextP999": [1.49, 1.77, null, null, 1.75], "headersP50": [0.37, 0.47, null, null, 0.47], "headersP99": [0.87, 1.14, null, null, 1.12], "headersP999": [1.46, 1.83, null, null, 1.81], "browserP50": [0.39, 0.48, null, null, 0.48], "browserP99": [0.93, 1.12, null, null, 1.49], "browserP999": [1.58, 1.86, null, null, 13.17], "plaintext": 190.9, "plaintextCores": 2.66, "plaintextOpen": 132.4, "plaintextRuns": 3, "plaintextSd": 0.8, "headers": 188.7, "headersCores": 2.81, "headersOpen": 125.6, "headersRuns": 3, "headersSd": 1.7, "browser": 179.6, "browserCores": 2.81, "browserOpen": 114.1, "browserRuns": 3, "browserSd": 6.6},
+  {"name": "dusty4", "what": "bare Zig on zio, 4 executors", "mode": "native", "fam": "other", "iso": 4, "tls": false, "plaintextP50": [0.32, 0.39, null, null, 0.41], "plaintextP99": [0.71, 0.93, null, null, 0.98], "plaintextP999": [1.26, 1.57, null, null, 1.61], "headersP50": [0.33, 0.41, null, null, 0.42], "headersP99": [0.72, 0.95, null, null, 1.02], "headersP999": [1.34, 1.52, null, null, 1.59], "browserP50": [0.32, 0.44, null, null, 0.43], "browserP99": [0.7, 1.02, null, null, 1.04], "browserP999": [1.09, 1.62, null, null, 1.64], "plaintext": 176.9, "plaintextCores": 2.66, "plaintextOpen": 144.2, "plaintextRuns": 3, "plaintextSd": 1.1, "headers": 177.6, "headersCores": 2.75, "headersOpen": 140.8, "headersRuns": 3, "headersSd": 5.2, "browser": 180.5, "browserCores": 2.77, "browserOpen": 138.0, "browserRuns": 3, "browserSd": 5.2},
+  {"name": "relic-native4-aot-tls", "what": "Relic on zio, 4 isolates", "mode": "AOT", "fam": "zio", "iso": 4, "tls": true, "plaintextP50": [0.37, 0.48, null, null, 0.5], "plaintextP99": [0.84, 1.11, null, null, 1.19], "plaintextP999": [1.5, 1.72, null, null, 1.82], "headersP50": [0.4, 0.43, null, null, 0.54], "headersP99": [0.89, 1.1, null, null, 1.28], "headersP999": [1.92, 1.72, null, null, 1.97], "browserP50": [0.51, 0.48, null, null, 0.66], "browserP99": [1.06, 1.15, null, null, 1.35], "browserP999": [2.03, 1.9, null, null, 1.95], "plaintext": 176.6, "plaintextCores": 2.96, "plaintextOpen": 117.2, "plaintextRuns": 3, "plaintextSd": 6.3, "headers": 114.2, "headersCores": 3.01, "headersOpen": 107.7, "headersRuns": 3, "headersSd": 0.2, "browser": 92.8, "browserCores": 3.39, "browserOpen": 89.6, "browserRuns": 3, "browserSd": 4.2},
+  {"name": "relic-native4-aot", "what": "Relic on zio, 4 isolates", "mode": "AOT", "fam": "zio", "iso": 4, "tls": false, "plaintextP50": [0.33, 0.42, null, null, 0.43], "plaintextP99": [0.72, 0.99, null, null, 1.02], "plaintextP999": [1.16, 1.48, null, null, 1.55], "headersP50": [0.36, 0.48, null, null, 0.48], "headersP99": [0.78, 1.07, null, null, 1.08], "headersP999": [1.23, 1.62, null, null, 1.58], "browserP50": [0.41, 0.54, null, null, 0.55], "browserP99": [0.89, 1.22, null, null, 1.3], "browserP999": [1.27, 1.59, null, null, 2.66], "plaintext": 174.8, "plaintextCores": 2.96, "plaintextOpen": 137.3, "plaintextRuns": 3, "plaintextSd": 0.9, "headers": 163.4, "headersCores": 3.17, "headersOpen": 124.4, "headersRuns": 3, "headersSd": 6.4, "browser": 131.0, "browserCores": 3.14, "browserOpen": 106.4, "browserRuns": 3, "browserSd": 3.2},
+  {"name": "relic-native4", "what": "Relic on zio, 4 isolates", "mode": "JIT", "fam": "zio", "iso": 4, "tls": false, "plaintextP50": [0.35, 0.42, null, null, 0.44], "plaintextP99": [0.78, 1.0, null, null, 1.04], "plaintextP999": [1.35, 1.51, null, null, 1.57], "headersP50": [0.37, 0.49, null, null, 0.48], "headersP99": [0.83, 1.18, null, null, 1.1], "headersP999": [1.38, 12.71, null, null, 1.62], "browserP50": [0.42, 0.55, null, null, 0.54], "browserP99": [0.92, 1.22, null, null, 1.22], "browserP999": [1.59, 1.65, null, null, 1.74], "plaintext": 165.5, "plaintextCores": 2.94, "plaintextOpen": 135.1, "plaintextRuns": 3, "plaintextSd": 1.3, "headers": 164.0, "headersCores": 3.19, "headersOpen": 123.7, "headersRuns": 3, "headersSd": 4.8, "browser": 126.1, "browserCores": 3.36, "browserOpen": 108.1, "browserRuns": 3, "browserSd": 3.2},
+  {"name": "dusty2", "what": "bare Zig on zio, 2 executors", "mode": "native", "fam": "other", "iso": 2, "tls": false, "plaintextP50": [0.38, 0.34, null, null, 0.39], "plaintextP99": [0.8, 0.74, null, null, 0.83], "plaintextP999": [1.36, 1.17, null, null, 1.3], "headersP50": [0.35, 0.34, null, null, 0.44], "headersP99": [0.7, 0.78, null, null, 0.88], "headersP999": [1.17, 1.15, null, null, 1.39], "browserP50": [0.33, 0.36, null, null, 0.47], "browserP99": [0.81, 0.82, null, null, 1.06], "browserP999": [1.38, 1.25, null, null, 15.25], "plaintext": 164.9, "plaintextCores": 1.68, "plaintextOpen": 155.2, "plaintextRuns": 3, "plaintextSd": 1.0, "headers": 152.9, "headersCores": 1.7, "headersOpen": 137.5, "headersRuns": 3, "headersSd": 4.6, "browser": 154.4, "browserCores": 1.64, "browserOpen": 119.4, "browserRuns": 3, "browserSd": 2.0},
+  {"name": "relic-native4-handler", "what": "Relic on zio, 4 isolates, no router", "mode": "JIT", "fam": "zio", "iso": 4, "tls": false, "plaintextP50": [0.36, 0.43, null, null, 0.43], "plaintextP99": [0.81, 0.99, null, null, 1.27], "plaintextP999": [1.26, 1.53, null, null, 12.65], "headersP50": [0.37, 0.48, null, null, 0.47], "headersP99": [0.83, 1.09, null, null, 1.1], "headersP999": [1.38, 1.58, null, null, 1.6], "browserP50": [0.41, 0.53, null, null, 0.52], "browserP99": [0.98, 1.21, null, null, 1.21], "browserP999": [1.54, 1.62, null, null, 1.64], "plaintext": 164.8, "plaintextCores": 2.78, "plaintextOpen": 127.4, "plaintextRuns": 3, "plaintextSd": 0.9, "headers": 162.8, "headersCores": 3.18, "headersOpen": 124.4, "headersRuns": 3, "headersSd": 0.3, "browser": 139.5, "browserCores": 3.32, "browserOpen": 111.5, "browserRuns": 3, "browserSd": 5.7},
+  {"name": "dusty2-tls", "what": "bare Zig on zio, 2 executors", "mode": "native", "fam": "other", "iso": 2, "tls": true, "plaintextP50": [0.35, 0.39, null, null, 0.46], "plaintextP99": [0.82, 0.87, null, null, 0.97], "plaintextP999": [1.49, 1.5, null, null, 1.64], "headersP50": [0.36, 0.37, null, null, 0.52], "headersP99": [0.77, 0.84, null, null, 0.99], "headersP999": [1.54, 1.4, null, null, 1.59], "browserP50": [0.36, 0.4, null, null, 0.53], "browserP99": [0.82, 0.89, null, null, 1.17], "browserP999": [1.42, 1.41, null, null, 15.2], "plaintext": 154.8, "plaintextCores": 1.66, "plaintextOpen": 130.0, "plaintextRuns": 3, "plaintextSd": 1.2, "headers": 131.6, "headersCores": 1.73, "headersOpen": 116.2, "headersRuns": 3, "headersSd": 2.8, "browser": 133.8, "browserCores": 1.67, "browserOpen": 108.9, "browserRuns": 3, "browserSd": 3.6},
+  {"name": "hyper4", "what": "bare Rust, 4 threads", "mode": "native", "fam": "other", "iso": 4, "tls": false, "plaintextP50": [0.38, 0.33, null, null, 0.36], "plaintextP99": [0.85, 0.83, null, null, 0.9], "plaintextP999": [1.41, 1.33, null, null, 1.38], "headersP50": [0.38, 0.36, null, null, 0.44], "headersP99": [0.91, 0.89, null, null, 1.01], "headersP999": [1.55, 1.44, null, null, 1.57], "browserP50": [0.41, 0.35, null, null, 0.48], "browserP99": [0.97, 0.84, null, null, 1.07], "browserP999": [1.93, 1.47, null, null, 1.56], "plaintext": 149.2, "plaintextCores": 2.45, "plaintextOpen": 149.0, "plaintextRuns": 3, "plaintextSd": 5.0, "headers": 147.2, "headersCores": 2.73, "headersOpen": 135.0, "headersRuns": 3, "headersSd": 0.5, "browser": 142.3, "browserCores": 2.81, "browserOpen": 123.5, "browserRuns": 3, "browserSd": 0.1},
+  {"name": "hyper4-tls", "what": "bare Rust, 4 threads", "mode": "native", "fam": "other", "iso": 4, "tls": true, "plaintextP50": [0.39, 0.39, null, null, 0.43], "plaintextP99": [0.94, 0.98, null, null, 1.06], "plaintextP999": [1.57, 1.61, null, null, 1.68], "headersP50": [0.4, 0.49, null, null, 0.54], "headersP99": [0.99, 1.13, null, null, 1.16], "headersP999": [1.7, 1.77, null, null, 1.77], "browserP50": [0.4, 0.57, null, null, 0.57], "browserP99": [0.98, 1.53, null, null, 1.24], "browserP999": [1.55, 13.55, null, null, 1.91], "plaintext": 146.8, "plaintextCores": 2.6, "plaintextOpen": 134.9, "plaintextRuns": 3, "plaintextSd": 0.6, "headers": 138.9, "headersCores": 2.73, "headersOpen": 110.5, "headersRuns": 3, "headersSd": 0.9, "browser": 131.5, "browserCores": 2.82, "browserOpen": 104.7, "browserRuns": 3, "browserSd": 0.2},
+  {"name": "relic-native2-aot", "what": "Relic on zio, 2 isolates", "mode": "AOT", "fam": "zio", "iso": 2, "tls": false, "plaintextP50": [0.4, 0.39, null, null, 0.47], "plaintextP99": [0.77, 0.86, null, null, 0.88], "plaintextP999": [1.23, 1.32, null, null, 1.28], "headersP50": [0.52, 0.53, null, null, 0.65], "headersP99": [1.05, 1.04, null, null, 1.17], "headersP999": [1.59, 1.5, null, null, 1.52], "browserP50": [0.65, 0.68, null, null, 0.73], "browserP99": [1.18, 1.25, null, null, 1.24], "browserP999": [1.9, 1.88, null, null, 1.67], "plaintext": 145.5, "plaintextCores": 1.74, "plaintextOpen": 129.6, "plaintextRuns": 3, "plaintextSd": 1.0, "headers": 102.5, "headersCores": 1.79, "headersOpen": 94.2, "headersRuns": 3, "headersSd": 9.1, "browser": 77.2, "browserCores": 1.75, "browserOpen": 77.2, "browserRuns": 3, "browserSd": 3.6},
+  {"name": "relic-native4-handler-tls", "what": "Relic on zio, 4 isolates, no router", "mode": "JIT", "fam": "zio", "iso": 4, "tls": true, "plaintextP50": [0.37, 0.52, null, null, 0.51], "plaintextP99": [0.73, 1.1, null, null, 1.1], "plaintextP999": [1.51, 1.73, null, null, 1.78], "headersP50": [0.45, 0.46, null, null, 0.6], "headersP99": [1.01, 1.04, null, null, 1.2], "headersP999": [1.82, 1.76, null, null, 1.82], "browserP50": [0.5, 0.58, null, null, 0.75], "browserP99": [1.07, 1.17, null, null, 1.43], "browserP999": [1.89, 2.0, null, null, 1.99], "plaintext": 144.1, "plaintextCores": 2.96, "plaintextOpen": 115.4, "plaintextRuns": 3, "plaintextSd": 4.5, "headers": 103.4, "headersCores": 3.26, "headersOpen": 98.7, "headersRuns": 3, "headersSd": 3.5, "browser": 78.6, "browserCores": 3.4, "browserOpen": 78.5, "browserRuns": 3, "browserSd": 1.5},
+  {"name": "relic-native2-handler", "what": "Relic on zio, 2 isolates, no router", "mode": "JIT", "fam": "zio", "iso": 2, "tls": false, "plaintextP50": [0.41, 0.37, null, null, 0.47], "plaintextP99": [0.74, 0.79, null, null, 0.87], "plaintextP999": [1.28, 1.41, null, null, 1.31], "headersP50": [0.51, 0.49, null, null, 0.54], "headersP99": [0.84, 0.86, null, null, 0.95], "headersP999": [2.19, 1.46, null, null, 1.32], "browserP50": [0.68, 0.7, null, null, 0.71], "browserP99": [1.11, 1.0, null, null, 1.13], "browserP999": [1.7, 1.54, null, null, 1.66], "plaintext": 142.2, "plaintextCores": 1.73, "plaintextOpen": 126.8, "plaintextRuns": 3, "plaintextSd": 2.7, "headers": 108.9, "headersCores": 1.75, "headersOpen": 108.1, "headersRuns": 3, "headersSd": 4.6, "browser": 81.6, "browserCores": 1.79, "browserOpen": 81.6, "browserRuns": 3, "browserSd": 1.5},
+  {"name": "relic-native2", "what": "Relic on zio, 2 isolates", "mode": "JIT", "fam": "zio", "iso": 2, "tls": false, "plaintextP50": [0.42, 0.37, null, null, 0.48], "plaintextP99": [0.75, 0.75, null, null, 0.9], "plaintextP999": [1.25, 1.12, null, null, 1.37], "headersP50": [0.51, 0.52, null, null, 0.54], "headersP99": [0.92, 0.83, null, null, 0.89], "headersP999": [1.24, 1.67, null, null, 1.31], "browserP50": [0.61, 0.68, null, null, 0.75], "browserP99": [1.1, 1.23, null, null, 1.19], "browserP999": [1.41, 2.03, null, null, 1.62], "plaintext": 138.2, "plaintextCores": 1.74, "plaintextOpen": 126.4, "plaintextRuns": 3, "plaintextSd": 3.5, "headers": 103.3, "headersCores": 1.74, "headersOpen": 103.2, "headersRuns": 3, "headersSd": 5.9, "browser": 78.1, "browserCores": 1.79, "browserOpen": 78.1, "browserRuns": 3, "browserSd": 2.9},
+  {"name": "hyper2", "what": "bare Rust, 2 threads", "mode": "native", "fam": "other", "iso": 2, "tls": false, "plaintextP50": [0.41, 0.33, null, null, 0.44], "plaintextP99": [0.9, 0.77, null, null, 0.87], "plaintextP999": [1.45, 1.16, null, null, 1.28], "headersP50": [0.37, 0.38, null, null, 0.47], "headersP99": [0.86, 0.83, null, null, 0.88], "headersP999": [1.24, 1.21, null, null, 1.26], "browserP50": [0.37, 0.44, null, null, 0.53], "browserP99": [0.8, 1.16, null, null, 0.95], "browserP999": [1.47, 13.67, null, null, 1.45], "plaintext": 137.5, "plaintextCores": 1.64, "plaintextOpen": 136.7, "plaintextRuns": 3, "plaintextSd": 0.7, "headers": 137.8, "headersCores": 1.71, "headersOpen": 132.9, "headersRuns": 3, "headersSd": 1.5, "browser": 124.6, "browserCores": 1.73, "browserOpen": 118.4, "browserRuns": 3, "browserSd": 0.6},
+  {"name": "relic-native4-tls", "what": "Relic on zio, 4 isolates", "mode": "JIT", "fam": "zio", "iso": 4, "tls": true, "plaintextP50": [0.38, 0.44, null, null, 0.51], "plaintextP99": [0.69, 1.01, null, null, 1.13], "plaintextP999": [1.39, 1.66, null, null, 1.77], "headersP50": [0.47, 0.46, null, null, 0.63], "headersP99": [1.04, 1.05, null, null, 1.27], "headersP999": [1.64, 1.84, null, null, 1.81], "browserP50": [0.63, 0.74, null, null, 0.82], "browserP99": [2.03, 1.92, null, null, 1.66], "browserP999": [2.8, 3.17, null, null, 3.12], "plaintext": 132.7, "plaintextCores": 2.97, "plaintextOpen": 115.2, "plaintextRuns": 3, "plaintextSd": 6.0, "headers": 102.4, "headersCores": 3.25, "headersOpen": 94.3, "headersRuns": 3, "headersSd": 0.7, "browser": 73.0, "browserCores": 3.33, "browserOpen": 71.4, "browserRuns": 3, "browserSd": 3.5},
+  {"name": "dusty", "what": "bare Zig on zio, 1 executor", "mode": "native", "fam": "other", "iso": 1, "tls": false, "plaintextP50": [0.5, 0.48, null, null, 0.49], "plaintextP99": [0.76, 0.83, null, null, 0.83], "plaintextP999": [1.32, 1.64, null, null, 1.07], "headersP50": [0.5, 0.58, null, null, 0.58], "headersP99": [0.85, 1.05, null, null, 1.01], "headersP999": [1.72, 16.9, null, null, 1.62], "browserP50": [0.5, 0.59, null, null, 0.62], "browserP99": [0.91, 0.91, null, null, 1.02], "browserP999": [1.9, 1.32, null, null, 1.33], "plaintext": 124.4, "plaintextCores": 0.89, "plaintextOpen": 123.6, "plaintextRuns": 3, "plaintextSd": 0.6, "headers": 106.7, "headersCores": 0.9, "headersOpen": 104.1, "headersRuns": 3, "headersSd": 4.2, "browser": 97.0, "browserCores": 0.9, "browserOpen": 96.9, "browserRuns": 3, "browserSd": 3.8},
+  {"name": "hyper2-tls", "what": "bare Rust, 2 threads", "mode": "native", "fam": "other", "iso": 2, "tls": true, "plaintextP50": [0.44, 0.37, null, null, 0.51], "plaintextP99": [1.03, 0.82, null, null, 1.28], "plaintextP999": [1.63, 1.37, null, null, 13.18], "headersP50": [0.4, 0.5, null, null, 0.55], "headersP99": [0.97, 1.22, null, null, 1.01], "headersP999": [1.65, 1.89, null, null, 1.54], "browserP50": [0.41, 0.49, null, null, 0.62], "browserP99": [1.01, 1.07, null, null, 1.09], "browserP999": [1.7, 1.67, null, null, 1.59], "plaintext": 121.6, "plaintextCores": 1.59, "plaintextOpen": 110.9, "plaintextRuns": 3, "plaintextSd": 0.5, "headers": 116.8, "headersCores": 1.72, "headersOpen": 112.3, "headersRuns": 3, "headersSd": 0.4, "browser": 100.8, "browserCores": 1.76, "browserOpen": 100.4, "browserRuns": 3, "browserSd": 2.3},
+  {"name": "relic-native2-handler-tls", "what": "Relic on zio, 2 isolates, no router", "mode": "JIT", "fam": "zio", "iso": 2, "tls": true, "plaintextP50": [0.68, 0.43, null, null, 0.52], "plaintextP99": [1.12, 0.9, null, null, 1.17], "plaintextP999": [1.83, 1.46, null, null, 1.58], "headersP50": [0.85, 0.68, null, null, 0.75], "headersP99": [3.26, 1.19, null, null, 1.33], "headersP999": [14.93, 1.96, null, null, 1.76], "browserP50": [0.91, 1.08, null, null, 1.09], "browserP99": [1.37, 1.42, null, null, 1.65], "browserP999": [5.01, 2.52, null, null, 3.09], "plaintext": 120.3, "plaintextCores": 1.73, "plaintextOpen": 111.9, "plaintextRuns": 3, "plaintextSd": 1.2, "headers": 82.1, "headersCores": 1.79, "headersOpen": 76.6, "headersRuns": 3, "headersSd": 0.5, "browser": 59.4, "browserCores": 1.8, "browserOpen": 55.6, "browserRuns": 3, "browserSd": 1.2},
+  {"name": "relic-native2-aot-tls", "what": "Relic on zio, 2 isolates", "mode": "AOT", "fam": "zio", "iso": 2, "tls": true, "plaintextP50": [0.45, 0.41, null, null, 0.53], "plaintextP99": [0.74, 0.87, null, null, 0.99], "plaintextP999": [1.7, 1.43, null, null, 1.59], "headersP50": [0.56, 0.59, null, null, 0.6], "headersP99": [0.94, 1.58, null, null, 1.02], "headersP999": [1.55, 14.23, null, null, 1.5], "browserP50": [0.89, 1.09, null, null, 1.09], "browserP99": [1.53, 1.46, null, null, 1.67], "browserP999": [2.78, 2.57, null, null, 3.06], "plaintext": 116.3, "plaintextCores": 1.74, "plaintextOpen": 111.3, "plaintextRuns": 3, "plaintextSd": 0.8, "headers": 90.2, "headersCores": 1.67, "headersOpen": 90.2, "headersRuns": 3, "headersSd": 0.9, "browser": 66.0, "browserCores": 1.8, "browserOpen": 55.0, "browserRuns": 3, "browserSd": 1.8},
+  {"name": "hyper", "what": "bare Rust, 1 thread", "mode": "native", "fam": "other", "iso": 1, "tls": false, "plaintextP50": [0.46, 0.53, null, null, 0.53], "plaintextP99": [0.79, 0.91, null, null, 0.89], "plaintextP999": [2.3, 1.43, null, null, 1.37], "headersP50": [0.48, 0.66, null, null, 0.69], "headersP99": [0.98, 1.05, null, null, 1.26], "headersP999": [1.99, 1.48, null, null, 14.46], "browserP50": [0.5, 0.75, null, null, 0.75], "browserP99": [1.02, 1.22, null, null, 1.27], "browserP999": [1.58, 2.12, null, null, 1.66], "plaintext": 113.9, "plaintextCores": 0.88, "plaintextOpen": 112.9, "plaintextRuns": 3, "plaintextSd": 0.1, "headers": 86.8, "headersCores": 0.86, "headersOpen": 81.0, "headersRuns": 3, "headersSd": 0.1, "browser": 77.6, "browserCores": 0.89, "browserOpen": 77.6, "browserRuns": 3, "browserSd": 0.4},
+  {"name": "relic-native2-tls", "what": "Relic on zio, 2 isolates", "mode": "JIT", "fam": "zio", "iso": 2, "tls": true, "plaintextP50": [0.5, 0.45, null, null, 0.54], "plaintextP99": [0.89, 0.86, null, null, 1.04], "plaintextP999": [1.64, 1.35, null, null, 1.55], "headersP50": [0.89, 0.71, null, null, 0.79], "headersP99": [1.26, 1.2, null, null, 1.43], "headersP999": [2.22, 1.65, null, null, 2.0], "browserP50": [0.8, 0.93, null, null, 1.09], "browserP99": [1.25, 1.31, null, null, 1.64], "browserP999": [4.95, 2.44, null, null, 3.21], "plaintext": 113.8, "plaintextCores": 1.74, "plaintextOpen": 107.8, "plaintextRuns": 3, "plaintextSd": 0.6, "headers": 80.5, "headersCores": 1.78, "headersOpen": 73.0, "headersRuns": 3, "headersSd": 2.8, "browser": 57.5, "browserCores": 1.8, "browserOpen": 55.5, "browserRuns": 3, "browserSd": 1.6},
+  {"name": "relic-native-handler", "what": "Relic on zio, 1 isolate, no router", "mode": "JIT", "fam": "zio", "iso": 1, "tls": false, "plaintextP50": [0.56, 0.57, null, null, 0.6], "plaintextP99": [0.91, 0.9, null, null, 2.13], "plaintextP999": [1.56, 1.2, null, null, 13.97], "headersP50": [0.78, 0.87, null, null, 0.86], "headersP99": [1.33, 1.39, null, null, 1.34], "headersP999": [2.33, 2.26, null, null, 1.98], "browserP50": [0.75, 1.05, null, null, 1.24], "browserP99": [1.83, 1.79, null, null, 1.87], "browserP999": [2.64, 2.64, null, null, 2.58], "plaintext": 106.7, "plaintextCores": 0.87, "plaintextOpen": 88.5, "plaintextRuns": 3, "plaintextSd": 0.7, "headers": 71.0, "headersCores": 0.92, "headersOpen": 70.7, "headersRuns": 3, "headersSd": 0.8, "browser": 48.7, "browserCores": 0.94, "browserOpen": 48.6, "browserRuns": 3, "browserSd": 0.1},
+  {"name": "relic-native-handler-aot", "what": "Relic on zio, 1 isolate, no router", "mode": "AOT", "fam": "zio", "iso": 1, "tls": false, "plaintextP50": [0.55, 0.58, null, null, 0.59], "plaintextP99": [0.93, 1.22, null, null, 1.02], "plaintextP999": [1.32, 13.74, null, null, 1.36], "headersP50": [0.79, 0.85, null, null, 0.83], "headersP99": [1.36, 1.33, null, null, 1.34], "headersP999": [2.36, 1.78, null, null, 1.85], "browserP50": [0.99, 1.01, null, null, 1.27], "browserP99": [5.92, 1.73, null, null, 1.83], "browserP999": [21.43, 2.08, null, null, 2.26], "plaintext": 103.6, "plaintextCores": 0.9, "plaintextOpen": 102.2, "plaintextRuns": 3, "plaintextSd": 0.5, "headers": 70.7, "headersCores": 0.91, "headersOpen": 70.7, "headersRuns": 3, "headersSd": 3.4, "browser": 47.9, "browserCores": 0.93, "browserOpen": 47.9, "browserRuns": 3, "browserSd": 0.5},
+  {"name": "relic-native", "what": "Relic on zio, 1 isolate", "mode": "JIT", "fam": "zio", "iso": 1, "tls": false, "plaintextP50": [0.58, 0.6, null, null, 0.61], "plaintextP99": [0.91, 1.38, null, null, 1.01], "plaintextP999": [1.17, 13.98, null, null, 1.35], "headersP50": [0.84, 0.88, null, null, 0.91], "headersP99": [1.57, 1.34, null, null, 1.47], "headersP999": [2.15, 2.14, null, null, 2.05], "browserP50": [1.02, 0.96, null, null, 1.29], "browserP99": [5.72, 1.78, null, null, 1.93], "browserP999": [27.56, 2.9, null, null, 2.59], "plaintext": 101.4, "plaintextCores": 0.91, "plaintextOpen": 99.3, "plaintextRuns": 3, "plaintextSd": 1.0, "headers": 68.9, "headersCores": 0.92, "headersOpen": 67.1, "headersRuns": 3, "headersSd": 0.4, "browser": 47.0, "browserCores": 0.93, "browserOpen": 46.9, "browserRuns": 3, "browserSd": 0.6},
+  {"name": "dusty-tls", "what": "bare Zig on zio, 1 executor", "mode": "native", "fam": "other", "iso": 1, "tls": true, "plaintextP50": [0.49, 0.57, null, null, 0.59], "plaintextP99": [0.89, 1.06, null, null, 1.02], "plaintextP999": [1.35, 17.04, null, null, 1.72], "headersP50": [0.53, 0.68, null, null, 0.72], "headersP99": [1.0, 1.21, null, null, 1.19], "headersP999": [1.5, 2.27, null, null, 1.57], "browserP50": [0.59, 0.76, null, null, 0.81], "browserP99": [1.15, 1.32, null, null, 1.34], "browserP999": [5.3, 3.13, null, null, 1.9], "plaintext": 100.7, "plaintextCores": 0.89, "plaintextOpen": 100.1, "plaintextRuns": 3, "plaintextSd": 2.8, "headers": 86.1, "headersCores": 0.9, "headersOpen": 83.7, "headersRuns": 3, "headersSd": 0.4, "browser": 67.1, "browserCores": 0.87, "browserOpen": 67.0, "browserRuns": 3, "browserSd": 0.2},
+  {"name": "relic-native-aot", "what": "Relic on zio, 1 isolate", "mode": "AOT", "fam": "zio", "iso": 1, "tls": false, "plaintextP50": [0.59, 0.59, null, null, 0.61], "plaintextP99": [0.94, 0.94, null, null, 1.18], "plaintextP999": [1.68, 1.24, null, null, 13.74], "headersP50": [0.73, 0.91, null, null, 0.89], "headersP99": [1.54, 1.79, null, null, 1.44], "headersP999": [2.05, 2.39, null, null, 2.02], "browserP50": [0.74, 1.14, null, null, 1.34], "browserP99": [1.92, 2.67, null, null, 1.95], "browserP999": [2.58, 19.67, null, null, 2.41], "plaintext": 98.7, "plaintextCores": 0.87, "plaintextOpen": 91.7, "plaintextRuns": 3, "plaintextSd": 2.2, "headers": 69.5, "headersCores": 0.92, "headersOpen": 68.4, "headersRuns": 3, "headersSd": 2.1, "browser": 47.0, "browserCores": 0.93, "browserOpen": 46.2, "browserRuns": 3, "browserSd": 0.7},
+  {"name": "hyper-tls", "what": "bare Rust, 1 thread", "mode": "native", "fam": "other", "iso": 1, "tls": true, "plaintextP50": [0.46, 0.61, null, null, 0.62], "plaintextP99": [0.9, 0.97, null, null, 1.02], "plaintextP999": [1.75, 1.43, null, null, 1.38], "headersP50": [0.5, 0.76, null, null, 0.8], "headersP99": [1.04, 1.21, null, null, 1.33], "headersP999": [2.58, 2.17, null, null, 2.46], "browserP50": [0.5, 0.75, null, null, 0.91], "browserP99": [1.09, 1.25, null, null, 1.5], "browserP999": [5.17, 1.81, null, null, 2.68], "plaintext": 93.7, "plaintextCores": 0.87, "plaintextOpen": 93.7, "plaintextRuns": 3, "plaintextSd": 3.0, "headers": 73.3, "headersCores": 0.89, "headersOpen": 73.2, "headersRuns": 3, "headersSd": 0.3, "browser": 63.1, "browserCores": 0.89, "browserOpen": 63.0, "browserRuns": 3, "browserSd": 2.5},
+  {"name": "relic-native-handler-tls", "what": "Relic on zio, 1 isolate, no router", "mode": "JIT", "fam": "zio", "iso": 1, "tls": true, "plaintextP50": [0.95, 0.88, null, null, 0.83], "plaintextP99": [1.47, 1.8, null, null, 1.57], "plaintextP999": [2.43, 15.36, null, null, 2.16], "headersP50": [1.3, 1.11, null, null, 1.19], "headersP99": [2.19, 1.71, null, null, 1.85], "headersP999": [3.54, 3.43, null, null, 2.42], "browserP50": [1.17, 1.74, null, null, 1.74], "browserP99": [18.35, 2.63, null, null, 2.48], "browserP999": [29.99, 5.71, null, null, 5.42], "plaintext": 81.6, "plaintextCores": 0.91, "plaintextOpen": 71.8, "plaintextRuns": 3, "plaintextSd": 2.2, "headers": 51.4, "headersCores": 0.93, "headersOpen": 50.8, "headersRuns": 3, "headersSd": 3.1, "browser": 35.3, "browserCores": 0.93, "browserOpen": 35.1, "browserRuns": 3, "browserSd": 1.7},
+  {"name": "relic-native-tls", "what": "Relic on zio, 1 isolate", "mode": "JIT", "fam": "zio", "iso": 1, "tls": true, "plaintextP50": [0.79, 0.96, null, null, 0.83], "plaintextP99": [1.32, 1.38, null, null, 1.43], "plaintextP999": [1.85, 2.11, null, null, 2.51], "headersP50": [1.16, 1.27, null, null, 1.28], "headersP99": [2.14, 2.03, null, null, 2.02], "headersP999": [2.85, 3.77, null, null, 3.91], "browserP50": [1.09, 1.78, null, null, 1.76], "browserP99": [2.54, 2.58, null, null, 2.62], "browserP999": [4.95, 5.25, null, null, 5.7], "plaintext": 80.0, "plaintextCores": 0.91, "plaintextOpen": 71.9, "plaintextRuns": 3, "plaintextSd": 0.7, "headers": 47.6, "headersCores": 0.93, "headersOpen": 46.9, "headersRuns": 3, "headersSd": 3.0, "browser": 36.0, "browserCores": 0.94, "browserOpen": 34.7, "browserRuns": 3, "browserSd": 2.1},
+  {"name": "relic-native-handler-aot-tls", "what": "Relic on zio, 1 isolate, no router", "mode": "AOT", "fam": "zio", "iso": 1, "tls": true, "plaintextP50": [0.64, 0.94, null, null, 0.65], "plaintextP99": [1.1, 1.27, null, null, 1.08], "plaintextP999": [1.36, 1.61, null, null, 1.49], "headersP50": [1.41, 0.95, null, null, 1.05], "headersP99": [2.17, 1.34, null, null, 1.7], "headersP999": [5.64, 1.94, null, null, 2.59], "browserP50": [0.89, 1.04, null, null, 1.79], "browserP99": [1.71, 2.16, null, null, 2.61], "browserP999": [5.13, 5.7, null, null, 5.3], "plaintext": 79.6, "plaintextCores": 0.86, "plaintextOpen": 79.6, "plaintextRuns": 3, "plaintextSd": 6.1, "headers": 56.2, "headersCores": 0.91, "headersOpen": 56.1, "headersRuns": 3, "headersSd": 2.6, "browser": 36.3, "browserCores": 0.93, "browserOpen": 34.1, "browserRuns": 3, "browserSd": 2.0},
+  {"name": "deno", "what": "bare Deno.serve", "mode": "native", "fam": "other", "iso": 1, "tls": false, "plaintextP50": [0.51, 0.72, null, null, 0.75], "plaintextP99": [1.03, 1.17, null, null, 1.21], "plaintextP999": [1.79, 1.57, null, null, 1.64], "headersP50": [0.55, 0.82, null, null, 1.11], "headersP99": [1.2, 1.47, null, null, 1.81], "headersP999": [1.61, 2.43, null, null, 2.69], "browserP50": [0.59, 0.84, null, null, 1.61], "browserP99": [1.39, 1.7, null, null, 2.4], "browserP999": [1.89, 2.55, null, null, 3.36], "plaintext": 78.0, "plaintextCores": 0.89, "plaintextOpen": 78.0, "plaintextRuns": 3, "plaintextSd": 2.6, "headers": 53.7, "headersCores": 0.92, "headersOpen": 53.5, "headersRuns": 3, "headersSd": 0.2, "browser": 32.7, "browserCores": 0.93, "browserOpen": 32.7, "browserRuns": 3, "browserSd": 1.3},
+  {"name": "relic-native-aot-tls", "what": "Relic on zio, 1 isolate", "mode": "AOT", "fam": "zio", "iso": 1, "tls": true, "plaintextP50": [0.94, 0.68, null, null, 0.67], "plaintextP99": [1.52, 1.07, null, null, 1.11], "plaintextP999": [2.04, 1.53, null, null, 1.82], "headersP50": [1.06, 0.98, null, null, 1.25], "headersP99": [1.7, 1.61, null, null, 1.91], "headersP999": [4.85, 2.47, null, null, 2.82], "browserP50": [1.12, 1.77, null, null, 1.84], "browserP99": [2.45, 2.52, null, null, 2.69], "browserP999": [3.17, 4.42, null, null, 4.99], "plaintext": 77.3, "plaintextCores": 0.86, "plaintextOpen": 77.2, "plaintextRuns": 3, "plaintextSd": 5.9, "headers": 58.6, "headersCores": 0.93, "headersOpen": 47.3, "headersRuns": 3, "headersSd": 0.7, "browser": 36.7, "browserCores": 0.93, "browserOpen": 33.3, "browserRuns": 3, "browserSd": 1.7},
+  {"name": "deno-tls", "what": "bare Deno.serve", "mode": "native", "fam": "other", "iso": 1, "tls": true, "plaintextP50": [0.54, 0.81, null, null, 1.09], "plaintextP99": [1.21, 1.42, null, null, 1.69], "plaintextP999": [5.25, 2.46, null, null, 3.28], "headersP50": [0.55, 0.83, null, null, 1.49], "headersP99": [1.45, 1.82, null, null, 2.41], "headersP999": [3.39, 3.02, null, null, 4.28], "browserP50": [0.59, 0.87, null, null, 2.28], "browserP99": [2.38, 2.23, null, null, 5.47], "browserP999": [4.15, 5.13, null, null, 7.55], "plaintext": 53.1, "plaintextCores": 0.9, "plaintextOpen": 53.0, "plaintextRuns": 3, "plaintextSd": 0.4, "headers": 38.2, "headersCores": 0.92, "headersOpen": 38.2, "headersRuns": 3, "headersSd": 2.0, "browser": 26.2, "browserCores": 0.93, "browserOpen": 24.9, "browserRuns": 3, "browserSd": 0.4},
+  {"name": "relic-io4", "what": "Relic IOAdapter on dart:io, 4 isolates", "mode": "JIT", "fam": "ioadapter", "iso": 4, "tls": false, "plaintextP50": [0.53, 0.55, null, null, 0.97], "plaintextP99": [1.46, 1.36, null, null, 2.13], "plaintextP999": [2.42, 2.16, null, null, 3.86], "headersP50": [0.5, 0.7, null, null, 1.87], "headersP99": [1.31, 2.1, null, null, 2.87], "headersP999": [2.14, 3.2, null, null, 3.86], "browserP50": [0.5, 0.68, null, null, 1.5], "browserP99": [1.36, 1.62, null, null, 3.21], "browserP999": [3.07, 3.51, null, null, 4.61], "plaintext": 44.7, "plaintextCores": 3.54, "plaintextOpen": 44.6, "plaintextRuns": 3, "plaintextSd": 0.9, "headers": 34.3, "headersCores": 4.09, "headersOpen": 33.7, "headersRuns": 3, "headersSd": 0.3, "browser": 28.7, "browserCores": 3.88, "browserOpen": 28.7, "browserRuns": 3, "browserSd": 1.5},
+  {"name": "shelf4", "what": "shelf on dart:io, 4 isolates", "mode": "JIT", "fam": "other", "iso": 4, "tls": false, "plaintextP50": [0.55, 0.71, null, null, 1.57], "plaintextP99": [5.95, 2.48, null, null, 2.72], "plaintextP999": [33.08, 3.07, null, null, 3.49], "headersP50": [0.52, 0.76, null, null, 2.32], "headersP99": [1.32, 3.67, null, null, 3.11], "headersP999": [2.96, 4.48, null, null, 5.35], "browserP50": [0.53, 0.72, null, null, 2.62], "browserP99": [1.3, 1.66, null, null, 3.42], "browserP999": [3.26, 3.38, null, null, 4.39], "plaintext": 38.7, "plaintextCores": 4.1, "plaintextOpen": 38.0, "plaintextRuns": 3, "plaintextSd": 0.5, "headers": 27.9, "headersCores": 4.03, "headersOpen": 27.5, "headersRuns": 3, "headersSd": 0.1, "browser": 24.3, "browserCores": 4.01, "browserOpen": 24.2, "browserRuns": 3, "browserSd": 0.0},
+  {"name": "relic-io2", "what": "Relic IOAdapter on dart:io, 2 isolates", "mode": "JIT", "fam": "ioadapter", "iso": 2, "tls": false, "plaintextP50": [0.49, 0.78, null, null, 1.93], "plaintextP99": [1.25, 2.24, null, null, 2.88], "plaintextP999": [2.73, 4.22, null, null, 5.05], "headersP50": [0.52, 0.97, null, null, 3.54], "headersP99": [1.27, 7.69, null, null, 4.45], "headersP999": [3.24, 49.38, null, null, 5.41], "browserP50": [0.53, 0.8, null, null, 3.74], "browserP99": [1.32, 2.13, null, null, 5.19], "browserP999": [3.17, 5.53, null, null, 10.61], "plaintext": 30.9, "plaintextCores": 2.33, "plaintextOpen": 30.8, "plaintextRuns": 3, "plaintextSd": 0.1, "headers": 18.5, "headersCores": 2.2, "headersOpen": 18.1, "headersRuns": 3, "headersSd": 0.1, "browser": 16.7, "browserCores": 2.19, "browserOpen": 16.6, "browserRuns": 3, "browserSd": 0.7},
+  {"name": "shelf2", "what": "shelf on dart:io, 2 isolates", "mode": "JIT", "fam": "other", "iso": 2, "tls": false, "plaintextP50": [0.51, 0.77, null, null, 2.72], "plaintextP99": [1.29, 2.51, null, null, 3.79], "plaintextP999": [3.27, 4.74, null, null, 6.35], "headersP50": [0.54, 0.8, null, null, 4.36], "headersP99": [1.32, 2.88, null, null, 5.32], "headersP999": [2.84, 4.89, null, null, 6.79], "browserP50": [0.54, 0.8, null, null, 4.8], "browserP99": [1.3, 2.66, null, null, 5.91], "browserP999": [3.3, 6.47, null, null, 6.41], "plaintext": 21.7, "plaintextCores": 2.21, "plaintextOpen": 21.7, "plaintextRuns": 3, "plaintextSd": 0.5, "headers": 15.1, "headersCores": 2.14, "headersOpen": 14.7, "headersRuns": 3, "headersSd": 0.0, "browser": 13.5, "browserCores": 2.1, "browserOpen": 13.3, "browserRuns": 3, "browserSd": 0.1},
+  {"name": "relic-io-handler", "what": "Relic IOAdapter on dart:io, no router", "mode": "JIT", "fam": "ioadapter", "iso": 1, "tls": false, "plaintextP50": [0.63, 0.85, null, null, 3.22], "plaintextP99": [15.73, 2.52, null, null, 4.64], "plaintextP999": [49.55, 3.65, null, null, 6.62], "headersP50": [0.62, 0.9, null, null, 5.58], "headersP99": [1.39, 3.02, null, null, 7.41], "headersP999": [3.3, 5.33, null, null, 9.0], "browserP50": [0.62, 0.9, null, null, 6.28], "browserP99": [1.4, 6.04, null, null, 7.84], "browserP999": [2.72, 8.96, null, null, 9.16], "plaintext": 19.3, "plaintextCores": 1.28, "plaintextOpen": 19.2, "plaintextRuns": 3, "plaintextSd": 0.1, "headers": 11.3, "headersCores": 1.19, "headersOpen": 11.3, "headersRuns": 3, "headersSd": 0.1, "browser": 9.7, "browserCores": 1.13, "browserOpen": 9.7, "browserRuns": 3, "browserSd": 0.4},
+  {"name": "relic-io-aot", "what": "Relic IOAdapter on dart:io", "mode": "AOT", "fam": "ioadapter", "iso": 1, "tls": false, "plaintextP50": [0.56, 0.84, null, null, 3.38], "plaintextP99": [1.25, 1.78, null, null, 4.48], "plaintextP999": [2.17, 3.08, null, null, 5.49], "headersP50": [0.58, 0.83, null, null, 5.43], "headersP99": [1.38, 1.67, null, null, 6.59], "headersP999": [1.72, 2.93, null, null, 7.58], "browserP50": [0.61, 0.91, null, null, 6.1], "browserP99": [1.38, 2.06, null, null, 7.77], "browserP999": [2.16, 3.56, null, null, 11.08], "plaintext": 18.4, "plaintextCores": 1.27, "plaintextOpen": 18.4, "plaintextRuns": 3, "plaintextSd": 0.7, "headers": 10.8, "headersCores": 1.14, "headersOpen": 10.8, "headersRuns": 3, "headersSd": 0.3, "browser": 10.3, "browserCores": 1.13, "browserOpen": 10.3, "browserRuns": 3, "browserSd": 0.1},
+  {"name": "relic-io", "what": "Relic IOAdapter on dart:io", "mode": "JIT", "fam": "ioadapter", "iso": 1, "tls": false, "plaintextP50": [0.58, 0.84, null, null, 3.4], "plaintextP99": [1.29, 2.42, null, null, 4.83], "plaintextP999": [4.11, 4.22, null, null, 5.89], "headersP50": [0.63, 0.89, null, null, 5.81], "headersP99": [1.37, 2.19, null, null, 7.38], "headersP999": [3.52, 5.89, null, null, 8.65], "browserP50": [0.62, 0.89, null, null, 6.64], "browserP99": [1.36, 3.96, null, null, 8.62], "browserP999": [2.21, 6.84, null, null, 16.85], "plaintext": 18.2, "plaintextCores": 1.28, "plaintextOpen": 18.2, "plaintextRuns": 3, "plaintextSd": 0.5, "headers": 10.9, "headersCores": 1.2, "headersOpen": 10.9, "headersRuns": 3, "headersSd": 0.2, "browser": 9.4, "browserCores": 1.14, "browserOpen": 9.4, "browserRuns": 3, "browserSd": 0.3},
+  {"name": "relic-io4-tls", "what": "Relic IOAdapter on dart:io, 4 isolates", "mode": "JIT", "fam": "ioadapter", "iso": 4, "tls": true, "plaintextP50": [0.82, 1.18, null, null, 1.92], "plaintextP99": [3.64, 3.75, null, null, 4.26], "plaintextP999": [18.89, 6.17, null, null, 5.51], "headersP50": [1.03, 1.05, null, null, 3.76], "headersP99": [20.62, 4.3, null, null, 6.22], "headersP999": [66.94, 18.67, null, null, 8.95], "browserP50": [0.86, 1.32, null, null, 1.56], "browserP99": [4.06, 4.37, null, null, 4.63], "browserP999": [19.73, 19.43, null, null, 5.72], "plaintext": 17.7, "plaintextCores": 4.62, "plaintextOpen": 17.7, "plaintextRuns": 3, "plaintextSd": 0.1, "headers": 16.0, "headersCores": 5.0, "headersOpen": 16.0, "headersRuns": 3, "headersSd": 0.1, "browser": 15.3, "browserCores": 4.81, "browserOpen": 15.3, "browserRuns": 3, "browserSd": 0.0},
+  {"name": "shelf4-tls", "what": "shelf on dart:io, 4 isolates", "mode": "JIT", "fam": "other", "iso": 4, "tls": true, "plaintextP50": [0.89, 1.06, null, null, 3.52], "plaintextP99": [3.66, 3.76, null, null, 6.05], "plaintextP999": [19.74, 17.27, null, null, 9.78], "headersP50": [1.07, 1.45, null, null, 1.73], "headersP99": [4.12, 4.51, null, null, 4.76], "headersP999": [19.99, 22.69, null, null, 8.05], "browserP50": [1.19, 1.26, null, null, 4.32], "browserP99": [4.43, 4.56, null, null, 7.2], "browserP999": [21.15, 19.54, null, null, 10.59], "plaintext": 16.9, "plaintextCores": 4.92, "plaintextOpen": 16.9, "plaintextRuns": 3, "plaintextSd": 0.2, "headers": 14.7, "headersCores": 4.62, "headersOpen": 14.7, "headersRuns": 3, "headersSd": 0.6, "browser": 14.3, "browserCores": 4.83, "browserOpen": 14.1, "browserRuns": 3, "browserSd": 0.2},
+  {"name": "relic-io2-tls", "what": "Relic IOAdapter on dart:io, 2 isolates", "mode": "JIT", "fam": "ioadapter", "iso": 2, "tls": true, "plaintextP50": [0.88, 1.13, null, null, 4.22], "plaintextP99": [4.27, 4.64, null, null, 6.69], "plaintextP999": [28.03, 26.52, null, null, 9.48], "headersP50": [0.9, 1.15, null, null, 5.36], "headersP99": [5.75, 6.23, null, null, 10.16], "headersP999": [32.68, 30.21, null, null, 21.86], "browserP50": [0.95, 1.33, null, null, 5.88], "browserP99": [6.17, 6.38, null, null, 8.88], "browserP999": [32.29, 30.53, null, null, 28.79], "plaintext": 15.4, "plaintextCores": 2.88, "plaintextOpen": 14.8, "plaintextRuns": 3, "plaintextSd": 0.0, "headers": 11.5, "headersCores": 2.61, "headersOpen": 11.5, "headersRuns": 3, "headersSd": 0.3, "browser": 10.7, "browserCores": 2.59, "browserOpen": 10.7, "browserRuns": 3, "browserSd": 0.3},
+  {"name": "shelf2-tls", "what": "shelf on dart:io, 2 isolates", "mode": "JIT", "fam": "other", "iso": 2, "tls": true, "plaintextP50": [0.9, 1.21, null, null, 4.79], "plaintextP99": [4.93, 8.98, null, null, 5.43], "plaintextP999": [30.93, 24.84, null, null, 14.91], "headersP50": [0.92, 1.22, null, null, 6.19], "headersP99": [6.43, 6.5, null, null, 7.1], "headersP999": [32.74, 31.57, null, null, 27.68], "browserP50": [0.94, 1.42, null, null, 6.73], "browserP99": [7.26, 7.22, null, null, 7.63], "browserP999": [35.8, 31.98, null, null, 28.66], "plaintext": 13.5, "plaintextCores": 2.73, "plaintextOpen": 13.1, "plaintextRuns": 3, "plaintextSd": 0.1, "headers": 10.4, "headersCores": 2.58, "headersOpen": 10.2, "headersRuns": 3, "headersSd": 0.0, "browser": 9.5, "browserCores": 2.51, "browserOpen": 9.4, "browserRuns": 3, "browserSd": 0.1},
+  {"name": "shelf", "what": "shelf on dart:io", "mode": "JIT", "fam": "other", "iso": 1, "tls": false, "plaintextP50": [0.6, 0.92, null, null, 4.75], "plaintextP99": [1.31, 2.3, null, null, 6.24], "plaintextP999": [3.43, 4.97, null, null, 7.85], "headersP50": [0.61, 0.88, null, null, 7.2], "headersP99": [1.43, 2.27, null, null, 8.66], "headersP999": [3.47, 6.45, null, null, 10.71], "browserP50": [0.65, 0.9, null, null, 8.0], "browserP99": [1.57, 5.38, null, null, 9.7], "browserP999": [5.05, 7.33, null, null, 11.15], "plaintext": 13.3, "plaintextCores": 1.18, "plaintextOpen": 13.2, "plaintextRuns": 3, "plaintextSd": 0.0, "headers": 8.7, "headersCores": 1.11, "headersOpen": 8.7, "headersRuns": 3, "headersSd": 0.3, "browser": 7.9, "browserCores": 1.1, "browserOpen": 7.9, "browserRuns": 3, "browserSd": 0.1},
+  {"name": "relic-io-aot-tls", "what": "Relic IOAdapter on dart:io", "mode": "AOT", "fam": "ioadapter", "iso": 1, "tls": true, "plaintextP50": [0.87, 1.08, null, null, 2.49], "plaintextP99": [6.71, 6.7, null, null, 7.86], "plaintextP999": [39.16, 36.55, null, null, 30.3], "headersP50": [0.92, 1.03, null, null, 8.9], "headersP99": [8.99, 8.94, null, null, 10.96], "headersP999": [42.35, 42.57, null, null, 38.38], "browserP50": [0.9, 1.0, null, null, 9.62], "browserP99": [10.3, 9.8, null, null, 11.66], "browserP999": [43.89, 43.07, null, null, 40.12], "plaintext": 9.4, "plaintextCores": 1.49, "plaintextOpen": 9.4, "plaintextRuns": 3, "plaintextSd": 0.3, "headers": 7.0, "headersCores": 1.37, "headersOpen": 7.0, "headersRuns": 3, "headersSd": 0.0, "browser": 6.5, "browserCores": 1.35, "browserOpen": 6.5, "browserRuns": 3, "browserSd": 0.0},
+  {"name": "relic-io-tls", "what": "Relic IOAdapter on dart:io", "mode": "JIT", "fam": "ioadapter", "iso": 1, "tls": true, "plaintextP50": [0.88, 1.1, null, null, 6.61], "plaintextP99": [6.85, 7.32, null, null, 7.99], "plaintextP999": [49.29, 43.63, null, null, 40.98], "headersP50": [0.88, 1.02, null, null, 9.24], "headersP99": [11.3, 9.5, null, null, 11.64], "headersP999": [54.05, 51.89, null, null, 47.26], "browserP50": [0.93, 1.02, null, null, 10.12], "browserP99": [11.43, 11.51, null, null, 12.62], "browserP999": [55.46, 52.32, null, null, 50.08], "plaintext": 9.3, "plaintextCores": 1.49, "plaintextOpen": 9.3, "plaintextRuns": 3, "plaintextSd": 0.1, "headers": 6.8, "headersCores": 1.35, "headersOpen": 6.7, "headersRuns": 3, "headersSd": 0.1, "browser": 6.2, "browserCores": 1.33, "browserOpen": 6.2, "browserRuns": 3, "browserSd": 0.1},
+  {"name": "shelf-tls", "what": "shelf on dart:io", "mode": "JIT", "fam": "other", "iso": 1, "tls": true, "plaintextP50": [0.92, 1.06, null, null, 7.63], "plaintextP99": [11.6, 8.56, null, null, 10.15], "plaintextP999": [51.76, 50.39, null, null, 45.22], "headersP50": [0.95, 1.03, null, null, 10.58], "headersP99": [16.74, 11.58, null, null, 12.75], "headersP999": [59.69, 53.24, null, null, 49.41], "browserP50": [0.93, 0.99, null, null, 11.53], "browserP99": [18.44, 12.07, null, null, 14.06], "browserP999": [64.08, 54.84, null, null, 53.21], "plaintext": 7.8, "plaintextCores": 1.41, "plaintextOpen": 7.8, "plaintextRuns": 3, "plaintextSd": 0.2, "headers": 5.9, "headersCores": 1.33, "headersOpen": 5.9, "headersRuns": 3, "headersSd": 0.0, "browser": 5.4, "browserCores": 1.28, "browserOpen": 5.4, "browserRuns": 3, "browserSd": 0.0},
+];
+
+const fam = {zio:"var(--zio)", ioadapter:"var(--ioadapter)", other:"var(--other)"};
+const tip = document.getElementById("tip");
+let filter = "all";
+let transport = "http";
+
+function visible() {
+  return rows.filter(r => !!r.tls === (transport === "https"))
+    .filter(r => filter === "all" || r.iso === Number(filter));
+}
+
+function deltaChart(el, pairs, byName, title, lim) {
+  const keys = ["plaintext","headers","browser"];
+  const vis = pairs.filter(p => byName[p[0]] && byName[p[1]])
+    .filter(p => filter === "all" || byName[p[0]].iso === Number(filter));
+  const left = 200, right = 40, groupH = 16 * 3 + 12, top = 8, bottom = 22;
+  const w = 880, plotW = w - left - right;
+  const h = top + vis.length * groupH + bottom;
+  const x = v => left + (v + lim) / (2 * lim) * plotW;
+  let s = `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="${title}">` + defs();
+  for (let t = -lim; t <= lim; t += lim / 3) {
+    s += `<line class="${t === 0 ? "base" : "grid"}" x1="${x(t)}" x2="${x(t)}" y1="${top}" y2="${h - bottom}"/>`;
+    s += `<text class="tick" x="${x(t)}" y="${h - 6}" text-anchor="middle">${t > 0 ? "+" : ""}${t.toFixed(0)}%</text>`;
+  }
+  vis.forEach((p, gi) => {
+    const a = byName[p[0]], b = byName[p[1]];
+    const gy = top + gi * groupH + 6;
+    s += `<text class="name" x="${left - 10}" y="${gy + 24 + 4}" text-anchor="end">${a.name}</text>`;
+    keys.forEach((k, ki) => {
+      const pct = (b[k] / a[k] - 1) * 100;
+      const y = gy + ki * 16, bh = 12;
+      const x0 = x(0), x1 = x(Math.max(-lim, Math.min(lim, pct)));
+      const bx = Math.min(x0, x1), bw = Math.abs(x1 - x0);
+      const col = pct >= 0 ? "var(--up)" : "var(--down)";
+      const label = `${k} ${pct >= 0 ? "+" : ""}${pct.toFixed(0)}%`;
+      s += `<g class="row" data-a="${a.name}" data-b="${b.name}" data-k="${k}">`;
+      s += `<rect x="${bx}" y="${y}" width="${bw}" height="${bh}" fill="${col}"/>`;
+      s += pct >= 0
+        ? `<text class="val" x="${x1 + 6}" y="${y + 10}">${label}</text>`
+        : `<text class="val" x="${x1 - 6}" y="${y + 10}" text-anchor="end">${label}</text>`;
+      s += `</g>`;
+    });
+  });
+  el.innerHTML = s + `</svg>`;
+}
+
+function defs() {
+  let s = '<defs><linearGradient id="fade"><stop offset="0" stop-color="#fff"/><stop offset="1" stop-color="#000"/></linearGradient>'
+    + '<mask id="fade-mask" maskContentUnits="objectBoundingBox"><rect width="1" height="1" fill="url(#fade)"/></mask>';
+  for (const k of Object.keys(fam)) {
+    s += `<pattern id="h-${k}" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(135)">
+      <rect width="6" height="6" fill="${fam[k]}"/><rect width="6" height="1.5" fill="var(--surface)"/></pattern>`;
+  }
+  return s + '</defs>';
+}
+
+function fmt(v) { return v.toFixed(1) + "k"; }
+function fmtCores(v) { return v === undefined ? "-" : v.toFixed(2); }
+function fmtOpen(v) { return v === undefined ? "-" : fmt(v); }
+function fmtSd(v) { return v === undefined ? "-" : "\u00b1" + fmt(v); }
+
+let lroute = "headers";
+
+function fmtMs(v) { return v === undefined || v === null ? "-" : v.toFixed(2) + " ms"; }
+
+/// A log scale over [lo, hi] in ms with the ticks a reader expects.
+function logScale(values, left, plotW) {
+  const lo = Math.pow(10, Math.floor(Math.log10(Math.min(...values))));
+  const hi = Math.pow(10, Math.ceil(Math.log10(Math.max(...values))));
+  const x = v => left + (Math.log10(v) - Math.log10(lo)) / (Math.log10(hi) - Math.log10(lo)) * plotW;
+  const ticks = [];
+  for (let d = lo; d < hi; d *= 10) for (const m of [1, 2, 5]) if (d * m >= lo && d * m <= hi) ticks.push(d * m);
+  ticks.push(hi);
+  return { x, ticks };
+}
+
+/// The index of the top open-loop point: 95 percent when the sweep has it, else 100.
+function topLoad(d, key) { return d[key] && d[key][3] != null ? 3 : 4; }
+function topLoadLabel(d, key) { return topLoad(d, key) === 3 ? "95" : "100"; }
+
+function latencyChart(el, kind) {
+  const p99 = lroute + "P99", p50 = lroute + "P50", p999 = lroute + "P999";
+  const data = visible().filter(d => d[p99] && d[p99][1] != null).sort((a, b) => a[p99][1] - b[p99][1]);
+  if (!data.length) { el.innerHTML = ""; return; }
+  const left = 200, right = 72, rowH = 24, top = 8, bottom = 22;
+  const w = 880, plotW = w - left - right;
+  const h = top + data.length * rowH + bottom;
+  const all = data.flatMap(d => kind === "load" ? [d[p99][0], d[p99][1], d[p99][topLoad(d, p99)]] : [d[p50][1], d[p99][1], d[p999][1]]).filter(v => v != null);
+  const { x, ticks } = logScale(all, left, plotW);
+  let s = `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="${lroute} latency by target">` + defs();
+  for (const t of ticks) {
+    s += `<line class="grid" x1="${x(t)}" x2="${x(t)}" y1="${top}" y2="${h - bottom}"/>`;
+    s += `<text class="tick" x="${x(t)}" y="${h - 6}" text-anchor="middle">${t < 1 ? t.toFixed(1) : t} ms</text>`;
+  }
+  data.forEach((d, i) => {
+    const y = top + i * rowH + 4, cy = y + (rowH - 8) / 2;
+    const c = fam[d.fam];
+    s += `<g class="row" data-lat="${rows.indexOf(d)}">`;
+    s += `<rect x="${left - 200}" y="${y - 4}" width="${w}" height="${rowH}" fill="transparent"/>`;
+    s += `<text class="name" x="${left - 10}" y="${cy + 4}" text-anchor="end">${d.name}</text>`;
+    if (kind === "load") {
+      const a = d[p99][0], b = d[p99][1], cc = d[p99][topLoad(d, p99)];
+      s += `<line class="lat-line" x1="${x(a)}" x2="${x(cc)}" y1="${cy}" y2="${cy}" stroke="${c}"/>`;
+      s += `<circle cx="${x(a)}" cy="${cy}" r="4" fill="var(--surface)" stroke="${c}" stroke-width="2"/>`;
+      s += `<circle cx="${x(b)}" cy="${cy}" r="4" fill="${c}"/>`;
+      s += `<circle cx="${x(cc)}" cy="${cy}" r="4" fill="${c}"/><circle cx="${x(cc)}" cy="${cy}" r="7" fill="none" stroke="${c}" stroke-width="1.5"/>`;
+      s += `<text class="val" x="${x(cc) + 12}" y="${cy + 4}">${fmtMs(cc)}</text>`;
+    } else {
+      const lo = d[p50][1], mid = d[p99][1], hi = d[p999][1];
+      s += `<line class="grid" x1="${x(lo)}" x2="${x(hi)}" y1="${cy}" y2="${cy}"/>`;
+      s += `<line class="lat-tick" x1="${x(lo)}" x2="${x(lo)}" y1="${cy - 5}" y2="${cy + 5}"/>`;
+      s += `<line class="lat-tick" x1="${x(hi)}" x2="${x(hi)}" y1="${cy - 5}" y2="${cy + 5}"/>`;
+      s += `<circle cx="${x(mid)}" cy="${cy}" r="5" fill="${c}"/>`;
+      s += `<text class="val" x="${x(hi) + 10}" y="${cy + 4}">${fmtMs(mid)}</text>`;
+    }
+    s += `</g>`;
+  });
+  s += `<line class="base" x1="${left}" x2="${left}" y1="${top}" y2="${h - bottom}"/></svg>`;
+  el.innerHTML = s;
+}
+
+function barChart(el, key, cores) {
+  const data = visible().filter(d => d[key] !== undefined).sort((a,b) => b[key] - a[key]);
+  const label = cores ? fmtCores : fmt;
+  const left = 200, right = 56, rowH = 24, top = 8, bottom = 22;
+  const w = 880, plotW = w - left - right;
+  const h = top + data.length * rowH + bottom;
+  const max = Math.max(...data.map(d => d[key]));
+  const step = cores ? 0.5 : max > 100 ? 25 : 10;
+  const axisMax = Math.ceil(max / step) * step;
+  const x = v => left + v / axisMax * plotW;
+  let s = `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="${key} requests per second by target">` + defs();
+  for (let t = 0; t <= axisMax; t += step) {
+    s += `<line class="grid" x1="${x(t)}" x2="${x(t)}" y1="${top}" y2="${h - bottom}"/>`;
+    s += `<text class="tick" x="${x(t)}" y="${h - 6}" text-anchor="middle">${cores ? t.toFixed(1) : t + "k"}</text>`;
+  }
+  data.forEach((d, i) => {
+    const y = top + i * rowH + 4, bh = rowH - 8;
+    const fill = d.mode === "AOT" ? `url(#h-${d.fam})` : fam[d.fam];
+    const sd = cores ? 0 : (d[key + "Sd"] || 0);
+    const solid = Math.max(0, x(d[key] - sd) - left);
+    const taper = sd > 0 ? x(Math.min(axisMax, d[key] + sd)) - (left + solid) : 0;
+    s += `<g class="row" data-i="${rows.indexOf(d)}">`;
+    s += `<rect x="${left - 200}" y="${y - 4}" width="${w}" height="${rowH}" fill="transparent"/>`;
+    s += `<text class="name" x="${left - 10}" y="${y + bh / 2 + 4}" text-anchor="end">${d.name}</text>`;
+    if (taper > 0) {
+      s += `<rect class="bar" x="${left}" y="${y}" width="${solid}" height="${bh}" fill="${fill}"/>`;
+      s += `<rect class="bar" x="${left + solid}" y="${y}" width="${taper}" height="${bh}" fill="${fill}" mask="url(#fade-mask)"/>`;
+    } else {
+      s += `<path class="bar" d="${roundRight(left, y, solid, bh, 4)}" fill="${fill}"/>`;
+    }
+    const open = cores ? undefined : d[key + "Open"];
+    const bound = open !== undefined && open < 0.9 * d[key];
+    if (open !== undefined) s += `<line class="notch" x1="${x(open)}" x2="${x(open)}" y1="${y - 2}" y2="${y + bh + 2}"/>`;
+    s += `<text class="val" x="${left + solid + taper + 6}" y="${y + bh / 2 + 4}">${label(d[key])}${bound ? `<tspan class="open"> open loop ${fmt(open)}</tspan>` : ""}</text>`;
+    s += `</g>`;
+  });
+  s += `<line class="base" x1="${left}" x2="${left}" y1="${top}" y2="${h - bottom}"/></svg>`;
+  el.innerHTML = s;
+}
+
+function roundRight(x, y, w, h, r) {
+  r = Math.min(r, w / 2, h / 2);
+  return `M${x},${y} H${x + w - r} a${r},${r} 0 0 1 ${r},${r} V${y + h - r} a${r},${r} 0 0 1 -${r},${r} H${x} Z`;
+}
+
+const byName = Object.fromEntries(rows.map(r => [r.name, r]));
+
+function aotChart(el) {
+  const pairs = rows.filter(r => r.mode === "AOT" && !r.tls).map(r => [r.name.slice(0, -4), r.name]);
+  deltaChart(el, pairs, byName, "AOT change versus JIT per target and route", 30);
+}
+
+function tlsChart(el) {
+  const pairs = rows.filter(r => r.tls).map(r => [r.name.slice(0, -4), r.name]);
+  deltaChart(el, pairs, byName, "HTTPS change versus HTTP per target and route", 60);
+}
+
+function render() {
+  barChart(document.querySelector("#p-plaintext .chart"), "plaintext");
+  barChart(document.querySelector("#p-headers .chart"), "headers");
+  barChart(document.querySelector("#p-browser .chart"), "browser");
+  document.getElementById("p-aot").hidden = transport !== "http";
+  document.getElementById("p-tls").hidden = transport !== "https";
+  if (transport === "https") tlsChart(document.querySelector("#p-tls .chart"));
+  latencyChart(document.querySelector("#p-lat-load .chart"), "load");
+  latencyChart(document.querySelector("#p-lat-75 .chart"), "75");
+  const hasCores = rows.some(r => r.plaintextCores !== undefined);
+  document.getElementById("p-cores").hidden = !hasCores;
+  if (hasCores) barChart(document.querySelector("#p-cores .chart"), "plaintextCores", true);
+  aotChart(document.querySelector("#p-aot .chart"));
+}
+
+document.getElementById("lroute").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  lroute = b.dataset.r;
+  for (const o of document.querySelectorAll("#lroute button")) o.setAttribute("aria-pressed", String(o === b));
+  render();
+});
+
+document.getElementById("transport").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  transport = b.dataset.t;
+  for (const o of document.querySelectorAll("#transport button")) o.setAttribute("aria-pressed", String(o === b));
+  render();
+});
+
+document.getElementById("tabs").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  filter = b.dataset.f;
+  for (const o of document.querySelectorAll("#tabs button")) o.setAttribute("aria-pressed", String(o === b));
+  render();
+});
+
+document.addEventListener("mousemove", e => {
+  const g = e.target.closest && e.target.closest("g.row");
+  if (!g) { tip.hidden = true; return; }
+  let text;
+  if (g.dataset.i !== undefined) {
+    const d = rows[+g.dataset.i];
+    text = `${d.name}  (${d.mode})\n${d.what}\nplaintext ${fmt(d.plaintext)}   headers ${fmt(d.headers)}   browser ${fmt(d.browser)}\ndeviation of ${d.plaintextRuns || "?"} runs ${fmtSd(d.plaintextSd)} / ${fmtSd(d.headersSd)} / ${fmtSd(d.browserSd)}\ncores ${fmtCores(d.plaintextCores)} / ${fmtCores(d.headersCores)} / ${fmtCores(d.browserCores)}\nopen loop at that rate ${fmtOpen(d.plaintextOpen)} / ${fmtOpen(d.headersOpen)} / ${fmtOpen(d.browserOpen)}\nat 90 percent ${fmtOpen(d.plaintextOpen90)} / ${fmtOpen(d.headersOpen90)} / ${fmtOpen(d.browserOpen90)}\nat 95 percent ${fmtOpen(d.plaintextOpen95)} / ${fmtOpen(d.headersOpen95)} / ${fmtOpen(d.browserOpen95)}`;
+  } else if (g.dataset.lat !== undefined) {
+    const d = rows[+g.dataset.lat];
+    const r = lroute;
+    const top = topLoad(d, r + "P99");
+    text = `${d.name}  ${r}\np99 at 50 / 75 / ${topLoadLabel(d, r + "P99")} percent: ${fmtMs(d[r + "P99"][0])} / ${fmtMs(d[r + "P99"][1])} / ${fmtMs(d[r + "P99"][top])}\nat 75 percent: p50 ${fmtMs(d[r + "P50"][1])}   p99.9 ${fmtMs(d[r + "P999"][1])}`;
+  } else {
+    const a = byName[g.dataset.a], b = byName[g.dataset.b], k = g.dataset.k;
+    text = `${k}\n${a.name} ${fmt(a[k])}   ${b.name} ${fmt(b[k])}`;
+  }
+  tip.textContent = text; tip.hidden = false;
+  const pad = 14;
+  let lx = e.clientX + pad, ly = e.clientY + pad;
+  if (lx + tip.offsetWidth > innerWidth - 8) lx = e.clientX - tip.offsetWidth - pad;
+  if (ly + tip.offsetHeight > innerHeight - 8) ly = e.clientY - tip.offsetHeight - pad;
+  tip.style.left = lx + "px"; tip.style.top = ly + "px";
+});
+
+const tb = document.querySelector("#tbl tbody");
+tb.innerHTML = rows.map(r => `<tr><td>${r.name}</td><td>${r.what}</td><td>${r.mode}</td><td>${r.tls ? "https" : "http"}</td><td class="n">${fmt(r.plaintext)}</td><td class="n">${fmt(r.headers)}</td><td class="n">${fmt(r.browser)}</td><td class="n">${fmtSd(r.plaintextSd)} / ${fmtSd(r.headersSd)} / ${fmtSd(r.browserSd)}</td><td class="n">${fmtCores(r.plaintextCores)} / ${fmtCores(r.headersCores)} / ${fmtCores(r.browserCores)}</td><td class="n">${fmtOpen(r.plaintextOpen)} / ${fmtOpen(r.headersOpen)} / ${fmtOpen(r.browserOpen)}</td></tr>`).join("");
+
+render();
+</script>
