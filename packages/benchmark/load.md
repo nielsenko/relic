@@ -1,58 +1,452 @@
-64 connections, 5s per run, latency in ms with latency correction.
+64 connections from oha on 4 threads, 5s per run, saturation the mean of 3 closed-loop runs, latency in ms, cores the CPU time the server process used over the run divided by its wall time.
 
-| target | workload | load | offered rps | rps | p50 | p99 | p99.9 | errors |
-|---|---|---|---|---|---|---|---|---|
-| hyper | plaintext | 50% | 59045 | 59023 | 0.56 | 20.53 | 29.48 | - |
-| hyper | plaintext | 75% | 88568 | 88544 | 0.70 | 3.33 | 10.37 | - |
-| hyper | plaintext | 100% | 118090 | 118033 | 0.92 | 29.83 | 34.61 | - |
-| hyper | headers | 50% | 68133 | 68103 | 0.65 | 2.52 | 9.47 | - |
-| hyper | headers | 75% | 102200 | 102148 | 0.87 | 6.08 | 11.69 | - |
-| hyper | headers | 100% | 136266 | 127032 | 9.31 | 396.09 | 401.63 | - |
-| hyper | browser | 50% | 70175 | 70137 | 0.70 | 3.88 | 10.38 | - |
-| hyper | browser | 75% | 105262 | 103486 | 1.17 | 300.06 | 306.51 | - |
-| hyper | browser | 100% | 140349 | 136465 | 2.68 | 130.18 | 136.21 | - |
-| deno | plaintext | 50% | 35528 | 35512 | 0.55 | 1.39 | 4.44 | - |
-| deno | plaintext | 75% | 53292 | 53222 | 0.98 | 9.46 | 16.91 | - |
-| deno | plaintext | 100% | 71056 | 70666 | 7.15 | 34.54 | 35.73 | - |
-| deno | headers | 50% | 23608 | 23597 | 0.55 | 1.32 | 2.37 | - |
-| deno | headers | 75% | 35412 | 35395 | 0.82 | 2.77 | 7.67 | - |
-| deno | headers | 100% | 47216 | 47201 | 1.28 | 7.71 | 9.92 | - |
-| deno | browser | 50% | 14987 | 14981 | 0.57 | 1.30 | 1.79 | - |
-| deno | browser | 75% | 22480 | 22474 | 1.07 | 13.63 | 18.89 | - |
-| deno | browser | 100% | 29973 | 29924 | 76.30 | 152.93 | 153.66 | - |
-| io | plaintext | 50% | 8708 | 8704 | 0.59 | 1.41 | 9.09 | - |
-| io | plaintext | 75% | 13061 | 13057 | 1.07 | 6.28 | 11.83 | - |
-| io | plaintext | 100% | 17415 | 16734 | 66.82 | 197.65 | 199.02 | - |
-| io | headers | 50% | 4194 | 4193 | 0.59 | 1.45 | 3.24 | - |
-| io | headers | 75% | 6290 | 6289 | 0.86 | 2.15 | 4.91 | - |
-| io | headers | 100% | 8387 | 7611 | 22.09 | 468.12 | 469.28 | - |
-| io | browser | 50% | 3797 | 3797 | 0.63 | 1.69 | 5.78 | - |
-| io | browser | 75% | 5696 | 5694 | 0.93 | 2.27 | 3.91 | - |
-| io | browser | 100% | 7594 | 6839 | 302.98 | 545.06 | 545.79 | - |
-| native | plaintext | 50% | 47428 | 47413 | 0.73 | 1.62 | 4.55 | - |
-| native | plaintext | 75% | 71141 | 71120 | 0.93 | 7.95 | 14.42 | - |
-| native | plaintext | 100% | 94855 | 94501 | 28.46 | 52.06 | 54.72 | - |
-| native | headers | 50% | 18130 | 18122 | 0.87 | 1.72 | 2.95 | - |
-| native | headers | 75% | 27195 | 27182 | 1.60 | 319.67 | 328.70 | - |
-| native | headers | 100% | 36260 | 35537 | 8.11 | 99.88 | 100.88 | - |
-| native | browser | 50% | 12878 | 12873 | 0.76 | 1.59 | 2.07 | - |
-| native | browser | 75% | 19316 | 19307 | 1.04 | 2.62 | 4.27 | - |
-| native | browser | 100% | 25755 | 24836 | 123.37 | 176.91 | 179.13 | - |
-| native4 | plaintext | 50% | 77439 | 77418 | 0.67 | 3.12 | 10.83 | - |
-| native4 | plaintext | 75% | 116158 | 116099 | 0.95 | 35.14 | 43.52 | - |
-| native4 | plaintext | 100% | 154877 | 148052 | 86.73 | 221.06 | 221.64 | - |
-| native4 | headers | 50% | 39019 | 39001 | 0.66 | 1.45 | 2.84 | - |
-| native4 | headers | 75% | 58528 | 58510 | 0.89 | 6.48 | 10.97 | - |
-| native4 | headers | 100% | 78037 | 73582 | 13.42 | 282.96 | 284.38 | - |
-| native4 | browser | 50% | 33486 | 33472 | 0.69 | 1.45 | 4.22 | - |
-| native4 | browser | 75% | 50229 | 50211 | 0.83 | 2.06 | 5.52 | - |
-| native4 | browser | 100% | 66972 | 66950 | 6.21 | 25.86 | 27.41 | - |
-| shelf | plaintext | 50% | 5421 | 5419 | 0.61 | 1.43 | 2.37 | - |
-| shelf | plaintext | 75% | 8131 | 8129 | 0.95 | 3.37 | 6.91 | - |
-| shelf | plaintext | 100% | 10841 | 9606 | 34.47 | 573.01 | 574.01 | - |
-| shelf | headers | 50% | 3695 | 3694 | 0.63 | 1.47 | 1.88 | - |
-| shelf | headers | 75% | 5542 | 5541 | 0.93 | 2.46 | 5.55 | - |
-| shelf | headers | 100% | 7389 | 6666 | 11.15 | 459.54 | 496.25 | - |
-| shelf | browser | 50% | 2886 | 2885 | 0.58 | 1.32 | 1.74 | - |
-| shelf | browser | 75% | 4328 | 4327 | 0.79 | 1.68 | 3.65 | - |
-| shelf | browser | 100% | 5771 | 5770 | 1.10 | 12.16 | 15.29 | - |
+| target | workload | load | offered rps | rps | p50 | p99 | p99.9 | cores | errors |
+|---|---|---|---|---|---|---|---|---|---|
+| hyper | plaintext | 50% | 56970 | 56945 | 0.46 | 0.79 | 2.30 | 0.51 | - |
+| hyper | plaintext | 75% | 85454 | 85430 | 0.53 | 0.91 | 1.43 | 0.72 | - |
+| hyper | plaintext | 100% | 113939 | 112928 | 0.53 | 0.89 | 1.37 | 0.88 | - |
+| hyper | headers | 50% | 43415 | 43400 | 0.48 | 0.98 | 1.99 | 0.51 | - |
+| hyper | headers | 75% | 65123 | 65092 | 0.66 | 1.05 | 1.48 | 0.69 | - |
+| hyper | headers | 100% | 86830 | 80986 | 0.69 | 1.26 | 14.46 | 0.86 | - |
+| hyper | browser | 50% | 38806 | 38796 | 0.50 | 1.02 | 1.58 | 0.52 | - |
+| hyper | browser | 75% | 58209 | 58193 | 0.75 | 1.22 | 2.12 | 0.71 | - |
+| hyper | browser | 100% | 77612 | 77575 | 0.75 | 1.27 | 1.66 | 0.89 | - |
+| hyper4 | plaintext | 50% | 74599 | 74566 | 0.38 | 0.85 | 1.41 | 1.44 | - |
+| hyper4 | plaintext | 75% | 111898 | 111841 | 0.33 | 0.83 | 1.33 | 1.79 | - |
+| hyper4 | plaintext | 100% | 149197 | 148958 | 0.36 | 0.90 | 1.38 | 2.45 | - |
+| hyper4 | headers | 50% | 73599 | 73562 | 0.38 | 0.91 | 1.55 | 1.50 | - |
+| hyper4 | headers | 75% | 110399 | 109850 | 0.36 | 0.89 | 1.44 | 2.04 | - |
+| hyper4 | headers | 100% | 147198 | 135019 | 0.44 | 1.01 | 1.57 | 2.73 | - |
+| hyper4 | browser | 50% | 71143 | 71109 | 0.41 | 0.97 | 1.93 | 1.63 | - |
+| hyper4 | browser | 75% | 106715 | 106116 | 0.35 | 0.84 | 1.47 | 2.01 | - |
+| hyper4 | browser | 100% | 142286 | 123513 | 0.48 | 1.07 | 1.56 | 2.81 | - |
+| deno | plaintext | 50% | 39004 | 38987 | 0.51 | 1.03 | 1.79 | 0.52 | - |
+| deno | plaintext | 75% | 58505 | 58479 | 0.72 | 1.17 | 1.57 | 0.70 | - |
+| deno | plaintext | 100% | 78007 | 77974 | 0.75 | 1.21 | 1.64 | 0.89 | - |
+| deno | headers | 50% | 26835 | 26829 | 0.55 | 1.20 | 1.61 | 0.54 | - |
+| deno | headers | 75% | 40252 | 40242 | 0.82 | 1.47 | 2.43 | 0.72 | - |
+| deno | headers | 100% | 53669 | 53482 | 1.11 | 1.81 | 2.69 | 0.92 | - |
+| deno | browser | 50% | 16342 | 16330 | 0.59 | 1.39 | 1.89 | 0.57 | - |
+| deno | browser | 75% | 24512 | 24499 | 0.84 | 1.70 | 2.55 | 0.73 | - |
+| deno | browser | 100% | 32683 | 32668 | 1.61 | 2.40 | 3.36 | 0.93 | - |
+| dusty | plaintext | 50% | 62189 | 62171 | 0.50 | 0.76 | 1.32 | 0.55 | - |
+| dusty | plaintext | 75% | 93283 | 93247 | 0.48 | 0.83 | 1.64 | 0.72 | - |
+| dusty | plaintext | 100% | 124377 | 123581 | 0.49 | 0.83 | 1.07 | 0.89 | - |
+| dusty | headers | 50% | 53373 | 53359 | 0.50 | 0.85 | 1.72 | 0.54 | - |
+| dusty | headers | 75% | 80060 | 80037 | 0.58 | 1.05 | 16.90 | 0.75 | - |
+| dusty | headers | 100% | 106746 | 104138 | 0.58 | 1.01 | 1.62 | 0.90 | - |
+| dusty | browser | 50% | 48480 | 48458 | 0.50 | 0.91 | 1.90 | 0.54 | - |
+| dusty | browser | 75% | 72720 | 72686 | 0.59 | 0.91 | 1.32 | 0.71 | - |
+| dusty | browser | 100% | 96960 | 96915 | 0.62 | 1.02 | 1.33 | 0.90 | - |
+| dusty4 | plaintext | 50% | 88431 | 88393 | 0.32 | 0.71 | 1.26 | 1.43 | - |
+| dusty4 | plaintext | 75% | 132646 | 132584 | 0.39 | 0.93 | 1.57 | 2.43 | - |
+| dusty4 | plaintext | 100% | 176861 | 144178 | 0.41 | 0.98 | 1.61 | 2.66 | - |
+| dusty4 | headers | 50% | 88820 | 88797 | 0.33 | 0.72 | 1.34 | 1.52 | - |
+| dusty4 | headers | 75% | 133230 | 133144 | 0.41 | 0.95 | 1.52 | 2.61 | - |
+| dusty4 | headers | 100% | 177640 | 140790 | 0.42 | 1.02 | 1.59 | 2.75 | - |
+| dusty4 | browser | 50% | 90238 | 90199 | 0.32 | 0.70 | 1.09 | 1.55 | - |
+| dusty4 | browser | 75% | 135357 | 135210 | 0.44 | 1.02 | 1.62 | 2.78 | - |
+| dusty4 | browser | 100% | 180476 | 137957 | 0.43 | 1.04 | 1.64 | 2.77 | - |
+| relic-native-aot | plaintext | 50% | 49334 | 49310 | 0.59 | 0.94 | 1.68 | 0.55 | - |
+| relic-native-aot | plaintext | 75% | 74001 | 73969 | 0.59 | 0.94 | 1.24 | 0.72 | - |
+| relic-native-aot | plaintext | 100% | 98668 | 91680 | 0.61 | 1.18 | 13.74 | 0.87 | - |
+| relic-native-aot | headers | 50% | 34736 | 34720 | 0.73 | 1.54 | 2.05 | 0.58 | - |
+| relic-native-aot | headers | 75% | 52103 | 52069 | 0.91 | 1.79 | 2.39 | 0.81 | - |
+| relic-native-aot | headers | 100% | 69471 | 68436 | 0.89 | 1.44 | 2.02 | 0.92 | - |
+| relic-native-aot | browser | 50% | 23515 | 23504 | 0.74 | 1.92 | 2.58 | 0.59 | - |
+| relic-native-aot | browser | 75% | 35272 | 34752 | 1.14 | 2.67 | 19.67 | 0.76 | - |
+| relic-native-aot | browser | 100% | 47029 | 46180 | 1.34 | 1.95 | 2.41 | 0.93 | - |
+| relic-native-handler-aot | plaintext | 50% | 51807 | 51792 | 0.55 | 0.93 | 1.32 | 0.55 | - |
+| relic-native-handler-aot | plaintext | 75% | 77711 | 77671 | 0.58 | 1.22 | 13.74 | 0.75 | - |
+| relic-native-handler-aot | plaintext | 100% | 103614 | 102219 | 0.59 | 1.02 | 1.36 | 0.90 | - |
+| relic-native-handler-aot | headers | 50% | 35371 | 35361 | 0.79 | 1.36 | 2.36 | 0.57 | - |
+| relic-native-handler-aot | headers | 75% | 53056 | 52968 | 0.85 | 1.33 | 1.78 | 0.77 | - |
+| relic-native-handler-aot | headers | 100% | 70741 | 70723 | 0.83 | 1.34 | 1.85 | 0.91 | - |
+| relic-native-handler-aot | browser | 50% | 23975 | 23964 | 0.99 | 5.92 | 21.43 | 0.63 | - |
+| relic-native-handler-aot | browser | 75% | 35962 | 35949 | 1.01 | 1.73 | 2.08 | 0.74 | - |
+| relic-native-handler-aot | browser | 100% | 47949 | 47929 | 1.27 | 1.83 | 2.26 | 0.93 | - |
+| relic-native4-aot | plaintext | 50% | 87411 | 87371 | 0.33 | 0.72 | 1.16 | 1.62 | - |
+| relic-native4-aot | plaintext | 75% | 131117 | 131054 | 0.42 | 0.99 | 1.48 | 2.83 | - |
+| relic-native4-aot | plaintext | 100% | 174822 | 137287 | 0.43 | 1.02 | 1.55 | 2.96 | - |
+| relic-native4-aot | headers | 50% | 81677 | 81642 | 0.36 | 0.78 | 1.23 | 1.76 | - |
+| relic-native4-aot | headers | 75% | 122515 | 121993 | 0.48 | 1.07 | 1.62 | 3.16 | - |
+| relic-native4-aot | headers | 100% | 163353 | 124376 | 0.48 | 1.08 | 1.58 | 3.17 | - |
+| relic-native4-aot | browser | 50% | 65478 | 65444 | 0.41 | 0.89 | 1.27 | 1.82 | - |
+| relic-native4-aot | browser | 75% | 98216 | 98184 | 0.54 | 1.22 | 1.59 | 3.22 | - |
+| relic-native4-aot | browser | 100% | 130955 | 106418 | 0.55 | 1.30 | 2.66 | 3.14 | - |
+| relic-io-aot | plaintext | 50% | 9212 | 9211 | 0.56 | 1.25 | 2.17 | 0.68 | - |
+| relic-io-aot | plaintext | 75% | 13818 | 13812 | 0.84 | 1.78 | 3.08 | 0.94 | - |
+| relic-io-aot | plaintext | 100% | 18424 | 18414 | 3.38 | 4.48 | 5.49 | 1.27 | - |
+| relic-io-aot | headers | 50% | 5407 | 5405 | 0.58 | 1.38 | 1.72 | 0.64 | - |
+| relic-io-aot | headers | 75% | 8111 | 8108 | 0.83 | 1.67 | 2.93 | 0.84 | - |
+| relic-io-aot | headers | 100% | 10814 | 10809 | 5.43 | 6.59 | 7.58 | 1.14 | - |
+| relic-io-aot | browser | 50% | 5146 | 5145 | 0.61 | 1.38 | 2.16 | 0.65 | - |
+| relic-io-aot | browser | 75% | 7719 | 7717 | 0.91 | 2.06 | 3.56 | 0.88 | - |
+| relic-io-aot | browser | 100% | 10292 | 10285 | 6.10 | 7.77 | 11.08 | 1.13 | - |
+| relic-io | plaintext | 50% | 9109 | 9106 | 0.58 | 1.29 | 4.11 | 0.70 | - |
+| relic-io | plaintext | 75% | 13664 | 13661 | 0.84 | 2.42 | 4.22 | 0.94 | - |
+| relic-io | plaintext | 100% | 18218 | 18209 | 3.40 | 4.83 | 5.89 | 1.28 | - |
+| relic-io | headers | 50% | 5451 | 5450 | 0.63 | 1.37 | 3.52 | 0.67 | - |
+| relic-io | headers | 75% | 8177 | 8173 | 0.89 | 2.19 | 5.89 | 0.89 | - |
+| relic-io | headers | 100% | 10902 | 10884 | 5.81 | 7.38 | 8.65 | 1.20 | - |
+| relic-io | browser | 50% | 4720 | 4719 | 0.62 | 1.36 | 2.21 | 0.64 | - |
+| relic-io | browser | 75% | 7080 | 7079 | 0.89 | 3.96 | 6.84 | 0.87 | - |
+| relic-io | browser | 100% | 9440 | 9435 | 6.64 | 8.62 | 16.85 | 1.14 | - |
+| relic-io-handler | plaintext | 50% | 9652 | 9648 | 0.63 | 15.73 | 49.55 | 0.73 | - |
+| relic-io-handler | plaintext | 75% | 14477 | 14473 | 0.85 | 2.52 | 3.65 | 0.96 | - |
+| relic-io-handler | plaintext | 100% | 19303 | 19195 | 3.22 | 4.64 | 6.62 | 1.28 | - |
+| relic-io-handler | headers | 50% | 5663 | 5662 | 0.62 | 1.39 | 3.30 | 0.67 | - |
+| relic-io-handler | headers | 75% | 8495 | 8491 | 0.90 | 3.02 | 5.33 | 0.92 | - |
+| relic-io-handler | headers | 100% | 11326 | 11308 | 5.58 | 7.41 | 9.00 | 1.19 | - |
+| relic-io-handler | browser | 50% | 4873 | 4871 | 0.62 | 1.40 | 2.72 | 0.65 | - |
+| relic-io-handler | browser | 75% | 7310 | 7307 | 0.90 | 6.04 | 8.96 | 0.87 | - |
+| relic-io-handler | browser | 100% | 9746 | 9742 | 6.28 | 7.84 | 9.16 | 1.13 | - |
+| relic-native | plaintext | 50% | 50679 | 50656 | 0.58 | 0.91 | 1.17 | 0.56 | - |
+| relic-native | plaintext | 75% | 76019 | 74687 | 0.60 | 1.38 | 13.98 | 0.76 | - |
+| relic-native | plaintext | 100% | 101358 | 99261 | 0.61 | 1.01 | 1.35 | 0.91 | - |
+| relic-native | headers | 50% | 34436 | 34421 | 0.84 | 1.57 | 2.15 | 0.61 | - |
+| relic-native | headers | 75% | 51653 | 51625 | 0.88 | 1.34 | 2.14 | 0.80 | - |
+| relic-native | headers | 100% | 68871 | 67068 | 0.91 | 1.47 | 2.05 | 0.92 | - |
+| relic-native | browser | 50% | 23482 | 23476 | 1.02 | 5.72 | 27.56 | 0.61 | - |
+| relic-native | browser | 75% | 35222 | 35211 | 0.96 | 1.78 | 2.90 | 0.75 | - |
+| relic-native | browser | 100% | 46963 | 46945 | 1.29 | 1.93 | 2.59 | 0.93 | - |
+| relic-native-handler | plaintext | 50% | 53329 | 53305 | 0.56 | 0.91 | 1.56 | 0.56 | - |
+| relic-native-handler | plaintext | 75% | 79993 | 79957 | 0.57 | 0.90 | 1.20 | 0.75 | - |
+| relic-native-handler | plaintext | 100% | 106657 | 88500 | 0.60 | 2.13 | 13.97 | 0.87 | - |
+| relic-native-handler | headers | 50% | 35488 | 35471 | 0.78 | 1.33 | 2.33 | 0.58 | - |
+| relic-native-handler | headers | 75% | 53232 | 53215 | 0.87 | 1.39 | 2.26 | 0.81 | - |
+| relic-native-handler | headers | 100% | 70976 | 70734 | 0.86 | 1.34 | 1.98 | 0.92 | - |
+| relic-native-handler | browser | 50% | 24332 | 24320 | 0.75 | 1.83 | 2.64 | 0.61 | - |
+| relic-native-handler | browser | 75% | 36497 | 36488 | 1.05 | 1.79 | 2.64 | 0.77 | - |
+| relic-native-handler | browser | 100% | 48663 | 48647 | 1.24 | 1.87 | 2.58 | 0.94 | - |
+| relic-native4 | plaintext | 50% | 82747 | 82708 | 0.35 | 0.78 | 1.35 | 1.64 | - |
+| relic-native4 | plaintext | 75% | 124120 | 124065 | 0.42 | 1.00 | 1.51 | 2.65 | - |
+| relic-native4 | plaintext | 100% | 165493 | 135064 | 0.44 | 1.04 | 1.57 | 2.94 | - |
+| relic-native4 | headers | 50% | 81999 | 81960 | 0.37 | 0.83 | 1.38 | 1.82 | - |
+| relic-native4 | headers | 75% | 122999 | 117955 | 0.49 | 1.18 | 12.71 | 3.04 | - |
+| relic-native4 | headers | 100% | 163998 | 123659 | 0.48 | 1.10 | 1.62 | 3.19 | - |
+| relic-native4 | browser | 50% | 63041 | 62996 | 0.42 | 0.92 | 1.59 | 1.84 | - |
+| relic-native4 | browser | 75% | 94562 | 94535 | 0.55 | 1.22 | 1.65 | 3.20 | - |
+| relic-native4 | browser | 100% | 126082 | 108122 | 0.54 | 1.22 | 1.74 | 3.36 | - |
+| relic-native4-handler | plaintext | 50% | 82392 | 82370 | 0.36 | 0.81 | 1.26 | 1.66 | - |
+| relic-native4-handler | plaintext | 75% | 123588 | 123553 | 0.43 | 0.99 | 1.53 | 2.67 | - |
+| relic-native4-handler | plaintext | 100% | 164784 | 127425 | 0.43 | 1.27 | 12.65 | 2.78 | - |
+| relic-native4-handler | headers | 50% | 81395 | 81360 | 0.37 | 0.83 | 1.38 | 1.82 | - |
+| relic-native4-handler | headers | 75% | 122092 | 121518 | 0.48 | 1.09 | 1.58 | 3.14 | - |
+| relic-native4-handler | headers | 100% | 162789 | 124445 | 0.47 | 1.10 | 1.60 | 3.18 | - |
+| relic-native4-handler | browser | 50% | 69750 | 69715 | 0.41 | 0.98 | 1.54 | 1.93 | - |
+| relic-native4-handler | browser | 75% | 104625 | 104555 | 0.53 | 1.21 | 1.62 | 3.29 | - |
+| relic-native4-handler | browser | 100% | 139500 | 111495 | 0.52 | 1.21 | 1.64 | 3.32 | - |
+| shelf | plaintext | 50% | 6650 | 6648 | 0.60 | 1.31 | 3.43 | 0.67 | - |
+| shelf | plaintext | 75% | 9975 | 9973 | 0.92 | 2.30 | 4.97 | 0.93 | - |
+| shelf | plaintext | 100% | 13300 | 13248 | 4.75 | 6.24 | 7.85 | 1.18 | - |
+| shelf | headers | 50% | 4350 | 4348 | 0.61 | 1.43 | 3.47 | 0.64 | - |
+| shelf | headers | 75% | 6525 | 6524 | 0.88 | 2.27 | 6.45 | 0.85 | - |
+| shelf | headers | 100% | 8700 | 8696 | 7.20 | 8.66 | 10.71 | 1.11 | - |
+| shelf | browser | 50% | 3958 | 3957 | 0.65 | 1.57 | 5.05 | 0.65 | - |
+| shelf | browser | 75% | 5937 | 5936 | 0.90 | 5.38 | 7.33 | 0.85 | - |
+| shelf | browser | 100% | 7916 | 7909 | 8.00 | 9.70 | 11.15 | 1.10 | - |
+| shelf4 | plaintext | 50% | 19345 | 19338 | 0.55 | 5.95 | 33.08 | 2.23 | - |
+| shelf4 | plaintext | 75% | 29018 | 29009 | 0.71 | 2.48 | 3.07 | 2.91 | - |
+| shelf4 | plaintext | 100% | 38690 | 38012 | 1.57 | 2.72 | 3.49 | 4.10 | - |
+| shelf4 | headers | 50% | 13929 | 13924 | 0.52 | 1.32 | 2.96 | 2.08 | - |
+| shelf4 | headers | 75% | 20893 | 20888 | 0.76 | 3.67 | 4.48 | 2.96 | - |
+| shelf4 | headers | 100% | 27857 | 27459 | 2.32 | 3.11 | 5.35 | 4.03 | - |
+| shelf4 | browser | 50% | 12157 | 12155 | 0.53 | 1.30 | 3.26 | 2.03 | - |
+| shelf4 | browser | 75% | 18236 | 18231 | 0.72 | 1.66 | 3.38 | 2.79 | - |
+| shelf4 | browser | 100% | 24314 | 24213 | 2.62 | 3.42 | 4.39 | 4.01 | - |
+| hyper2 | plaintext | 50% | 68746 | 68714 | 0.41 | 0.90 | 1.45 | 0.98 | - |
+| hyper2 | plaintext | 75% | 103119 | 103072 | 0.33 | 0.77 | 1.16 | 1.08 | - |
+| hyper2 | plaintext | 100% | 137492 | 136695 | 0.44 | 0.87 | 1.28 | 1.64 | - |
+| hyper2 | headers | 50% | 68885 | 68849 | 0.37 | 0.86 | 1.24 | 0.98 | - |
+| hyper2 | headers | 75% | 103327 | 103282 | 0.38 | 0.83 | 1.21 | 1.28 | - |
+| hyper2 | headers | 100% | 137769 | 132891 | 0.47 | 0.88 | 1.26 | 1.71 | - |
+| hyper2 | browser | 50% | 62293 | 62266 | 0.37 | 0.80 | 1.47 | 0.92 | - |
+| hyper2 | browser | 75% | 93440 | 90329 | 0.44 | 1.16 | 13.67 | 1.32 | - |
+| hyper2 | browser | 100% | 124586 | 118401 | 0.53 | 0.95 | 1.45 | 1.73 | - |
+| dusty2 | plaintext | 50% | 82452 | 82414 | 0.38 | 0.80 | 1.36 | 1.02 | - |
+| dusty2 | plaintext | 75% | 123678 | 123620 | 0.34 | 0.74 | 1.17 | 1.30 | - |
+| dusty2 | plaintext | 100% | 164904 | 155208 | 0.39 | 0.83 | 1.30 | 1.68 | - |
+| dusty2 | headers | 50% | 76467 | 76431 | 0.35 | 0.70 | 1.17 | 0.96 | - |
+| dusty2 | headers | 75% | 114700 | 114647 | 0.34 | 0.78 | 1.15 | 1.27 | - |
+| dusty2 | headers | 100% | 152933 | 137499 | 0.44 | 0.88 | 1.39 | 1.70 | - |
+| dusty2 | browser | 50% | 77194 | 77174 | 0.33 | 0.81 | 1.38 | 0.95 | - |
+| dusty2 | browser | 75% | 115791 | 115762 | 0.36 | 0.82 | 1.25 | 1.33 | - |
+| dusty2 | browser | 100% | 154388 | 119360 | 0.47 | 1.06 | 15.25 | 1.64 | - |
+| relic-native2-aot | plaintext | 50% | 72738 | 72707 | 0.40 | 0.77 | 1.23 | 1.02 | - |
+| relic-native2-aot | plaintext | 75% | 109106 | 108879 | 0.39 | 0.86 | 1.32 | 1.38 | - |
+| relic-native2-aot | plaintext | 100% | 145475 | 129551 | 0.47 | 0.88 | 1.28 | 1.74 | - |
+| relic-native2-aot | headers | 50% | 51236 | 51214 | 0.52 | 1.05 | 1.59 | 1.03 | - |
+| relic-native2-aot | headers | 75% | 76854 | 76832 | 0.53 | 1.04 | 1.50 | 1.36 | - |
+| relic-native2-aot | headers | 100% | 102472 | 94234 | 0.65 | 1.17 | 1.52 | 1.79 | - |
+| relic-native2-aot | browser | 50% | 38617 | 38601 | 0.65 | 1.18 | 1.90 | 0.97 | - |
+| relic-native2-aot | browser | 75% | 57925 | 57894 | 0.68 | 1.25 | 1.88 | 1.35 | - |
+| relic-native2-aot | browser | 100% | 77233 | 77203 | 0.73 | 1.24 | 1.67 | 1.75 | - |
+| relic-native2 | plaintext | 50% | 69114 | 69095 | 0.42 | 0.75 | 1.25 | 1.02 | - |
+| relic-native2 | plaintext | 75% | 103671 | 103625 | 0.37 | 0.75 | 1.12 | 1.25 | - |
+| relic-native2 | plaintext | 100% | 138228 | 126366 | 0.48 | 0.90 | 1.37 | 1.74 | - |
+| relic-native2 | headers | 50% | 51632 | 51609 | 0.51 | 0.92 | 1.24 | 0.98 | - |
+| relic-native2 | headers | 75% | 77448 | 77412 | 0.52 | 0.83 | 1.67 | 1.35 | - |
+| relic-native2 | headers | 100% | 103264 | 103235 | 0.54 | 0.89 | 1.31 | 1.74 | - |
+| relic-native2 | browser | 50% | 39071 | 39053 | 0.61 | 1.10 | 1.41 | 0.96 | - |
+| relic-native2 | browser | 75% | 58606 | 58580 | 0.68 | 1.23 | 2.03 | 1.34 | - |
+| relic-native2 | browser | 100% | 78141 | 78119 | 0.75 | 1.19 | 1.62 | 1.79 | - |
+| relic-native2-handler | plaintext | 50% | 71088 | 71056 | 0.41 | 0.74 | 1.28 | 1.02 | - |
+| relic-native2-handler | plaintext | 75% | 106632 | 105936 | 0.37 | 0.79 | 1.41 | 1.26 | - |
+| relic-native2-handler | plaintext | 100% | 142176 | 126832 | 0.47 | 0.87 | 1.31 | 1.73 | - |
+| relic-native2-handler | headers | 50% | 54441 | 54417 | 0.51 | 0.84 | 2.19 | 1.00 | - |
+| relic-native2-handler | headers | 75% | 81662 | 81635 | 0.49 | 0.86 | 1.46 | 1.32 | - |
+| relic-native2-handler | headers | 100% | 108882 | 108092 | 0.54 | 0.95 | 1.32 | 1.75 | - |
+| relic-native2-handler | browser | 50% | 40791 | 40774 | 0.68 | 1.11 | 1.70 | 1.01 | - |
+| relic-native2-handler | browser | 75% | 61186 | 61159 | 0.70 | 1.00 | 1.54 | 1.39 | - |
+| relic-native2-handler | browser | 100% | 81581 | 81559 | 0.71 | 1.13 | 1.66 | 1.79 | - |
+| shelf2 | plaintext | 50% | 10860 | 10855 | 0.51 | 1.29 | 3.27 | 1.14 | - |
+| shelf2 | plaintext | 75% | 16289 | 16285 | 0.77 | 2.51 | 4.74 | 1.61 | - |
+| shelf2 | plaintext | 100% | 21719 | 21699 | 2.72 | 3.79 | 6.35 | 2.21 | - |
+| shelf2 | headers | 50% | 7547 | 7544 | 0.54 | 1.32 | 2.84 | 1.11 | - |
+| shelf2 | headers | 75% | 11320 | 11317 | 0.80 | 2.88 | 4.89 | 1.62 | - |
+| shelf2 | headers | 100% | 15093 | 14673 | 4.36 | 5.32 | 6.79 | 2.14 | - |
+| shelf2 | browser | 50% | 6740 | 6739 | 0.54 | 1.30 | 3.30 | 1.09 | - |
+| shelf2 | browser | 75% | 10110 | 10108 | 0.80 | 2.66 | 6.47 | 1.56 | - |
+| shelf2 | browser | 100% | 13480 | 13300 | 4.80 | 5.91 | 6.41 | 2.10 | - |
+| relic-io2 | plaintext | 50% | 15475 | 15468 | 0.49 | 1.25 | 2.73 | 1.19 | - |
+| relic-io2 | plaintext | 75% | 23213 | 23207 | 0.78 | 2.24 | 4.22 | 1.70 | - |
+| relic-io2 | plaintext | 100% | 30950 | 30821 | 1.93 | 2.88 | 5.05 | 2.33 | - |
+| relic-io2 | headers | 50% | 9234 | 9231 | 0.52 | 1.27 | 3.24 | 1.12 | - |
+| relic-io2 | headers | 75% | 13850 | 13736 | 0.97 | 7.69 | 49.38 | 1.69 | - |
+| relic-io2 | headers | 100% | 18467 | 18058 | 3.54 | 4.45 | 5.41 | 2.20 | - |
+| relic-io2 | browser | 50% | 8339 | 8336 | 0.53 | 1.32 | 3.17 | 1.13 | - |
+| relic-io2 | browser | 75% | 12508 | 12503 | 0.80 | 2.13 | 5.53 | 1.61 | - |
+| relic-io2 | browser | 100% | 16677 | 16565 | 3.74 | 5.19 | 10.61 | 2.19 | - |
+| relic-io4 | plaintext | 50% | 22371 | 22362 | 0.53 | 1.46 | 2.42 | 2.30 | - |
+| relic-io4 | plaintext | 75% | 33557 | 33542 | 0.55 | 1.36 | 2.16 | 2.49 | - |
+| relic-io4 | plaintext | 100% | 44742 | 44583 | 0.97 | 2.13 | 3.86 | 3.54 | - |
+| relic-io4 | headers | 50% | 17147 | 17140 | 0.50 | 1.31 | 2.14 | 2.12 | - |
+| relic-io4 | headers | 75% | 25720 | 25714 | 0.70 | 2.10 | 3.20 | 2.93 | - |
+| relic-io4 | headers | 100% | 34293 | 33740 | 1.87 | 2.87 | 3.86 | 4.09 | - |
+| relic-io4 | browser | 50% | 14352 | 14347 | 0.50 | 1.36 | 3.07 | 2.05 | - |
+| relic-io4 | browser | 75% | 21528 | 21523 | 0.68 | 1.62 | 3.51 | 2.73 | - |
+| relic-io4 | browser | 100% | 28704 | 28697 | 1.50 | 3.21 | 4.61 | 3.88 | - |
+
+Every target in its own run of the night of 2026-10-30 on an 8-core Mac, oha on the same machine, with the machine left to go quiet between targets. hyper runs 1, 2 or 4 tokio workers, dusty 1, 2 or 4 executors, the Dart servers 1, 2 or 4 isolates. The closed-loop rates behind every saturation figure are in load.json as `saturationRuns`. The `-aot` rows are `dart build cli` bundles of the same servers, the rest run under `dart run`.
+
+The same routes over HTTPS, TLS 1.3 with the relic_native test certificate, from the same sweep. oha keeps its 64 connections open, so the cost is per record, not per handshake.
+
+| target | workload | load | offered rps | rps | p50 | p99 | p99.9 | cores | errors |
+|---|---|---|---|---|---|---|---|---|---|
+| hyper-tls | plaintext | 50% | 46868 | 46856 | 0.46 | 0.90 | 1.75 | 0.50 | - |
+| hyper-tls | plaintext | 75% | 70302 | 70265 | 0.61 | 0.97 | 1.43 | 0.69 | - |
+| hyper-tls | plaintext | 100% | 93736 | 93675 | 0.62 | 1.02 | 1.38 | 0.87 | - |
+| hyper-tls | headers | 50% | 36652 | 36635 | 0.50 | 1.04 | 2.58 | 0.51 | - |
+| hyper-tls | headers | 75% | 54977 | 54954 | 0.76 | 1.21 | 2.17 | 0.70 | - |
+| hyper-tls | headers | 100% | 73303 | 73207 | 0.80 | 1.33 | 2.46 | 0.89 | - |
+| hyper-tls | browser | 50% | 31530 | 31507 | 0.50 | 1.09 | 5.17 | 0.51 | - |
+| hyper-tls | browser | 75% | 47295 | 47280 | 0.75 | 1.25 | 1.81 | 0.69 | - |
+| hyper-tls | browser | 100% | 63060 | 63038 | 0.91 | 1.50 | 2.68 | 0.89 | - |
+| hyper4-tls | plaintext | 50% | 73388 | 73349 | 0.39 | 0.94 | 1.57 | 1.47 | - |
+| hyper4-tls | plaintext | 75% | 110081 | 109844 | 0.39 | 0.98 | 1.61 | 2.05 | - |
+| hyper4-tls | plaintext | 100% | 146775 | 134863 | 0.43 | 1.06 | 1.68 | 2.60 | - |
+| hyper4-tls | headers | 50% | 69436 | 69416 | 0.40 | 0.99 | 1.70 | 1.54 | - |
+| hyper4-tls | headers | 75% | 104153 | 104117 | 0.49 | 1.13 | 1.77 | 2.51 | - |
+| hyper4-tls | headers | 100% | 138871 | 110472 | 0.54 | 1.16 | 1.77 | 2.73 | - |
+| hyper4-tls | browser | 50% | 65736 | 65702 | 0.40 | 0.98 | 1.55 | 1.53 | - |
+| hyper4-tls | browser | 75% | 98604 | 94257 | 0.57 | 1.53 | 13.55 | 2.68 | - |
+| hyper4-tls | browser | 100% | 131472 | 104657 | 0.57 | 1.24 | 1.91 | 2.82 | - |
+| deno-tls | plaintext | 50% | 26570 | 26558 | 0.54 | 1.21 | 5.25 | 0.54 | - |
+| deno-tls | plaintext | 75% | 39854 | 39841 | 0.81 | 1.42 | 2.46 | 0.71 | - |
+| deno-tls | plaintext | 100% | 53139 | 52966 | 1.09 | 1.69 | 3.28 | 0.90 | - |
+| deno-tls | headers | 50% | 19109 | 19100 | 0.55 | 1.45 | 3.39 | 0.54 | - |
+| deno-tls | headers | 75% | 28664 | 28656 | 0.83 | 1.82 | 3.02 | 0.71 | - |
+| deno-tls | headers | 100% | 38218 | 38170 | 1.49 | 2.41 | 4.28 | 0.92 | - |
+| deno-tls | browser | 50% | 13095 | 13088 | 0.59 | 2.38 | 4.15 | 0.55 | - |
+| deno-tls | browser | 75% | 19643 | 19637 | 0.87 | 2.23 | 5.13 | 0.73 | - |
+| deno-tls | browser | 100% | 26190 | 24888 | 2.28 | 5.47 | 7.55 | 0.93 | - |
+| dusty-tls | plaintext | 50% | 50374 | 50360 | 0.49 | 0.89 | 1.35 | 0.54 | - |
+| dusty-tls | plaintext | 75% | 75560 | 71610 | 0.57 | 1.06 | 17.04 | 0.70 | - |
+| dusty-tls | plaintext | 100% | 100747 | 100089 | 0.59 | 1.02 | 1.72 | 0.89 | - |
+| dusty-tls | headers | 50% | 43050 | 43038 | 0.53 | 1.00 | 1.50 | 0.54 | - |
+| dusty-tls | headers | 75% | 64574 | 64541 | 0.68 | 1.21 | 2.27 | 0.76 | - |
+| dusty-tls | headers | 100% | 86099 | 83658 | 0.72 | 1.19 | 1.57 | 0.90 | - |
+| dusty-tls | browser | 50% | 33529 | 33511 | 0.59 | 1.15 | 5.30 | 0.52 | - |
+| dusty-tls | browser | 75% | 50294 | 50269 | 0.76 | 1.32 | 3.13 | 0.71 | - |
+| dusty-tls | browser | 100% | 67058 | 67032 | 0.81 | 1.34 | 1.90 | 0.87 | - |
+| dusty4-tls | plaintext | 50% | 95467 | 95419 | 0.36 | 0.88 | 1.49 | 1.74 | - |
+| dusty4-tls | plaintext | 75% | 143201 | 132260 | 0.44 | 1.15 | 1.77 | 2.67 | - |
+| dusty4-tls | plaintext | 100% | 190934 | 132353 | 0.44 | 1.12 | 1.75 | 2.66 | - |
+| dusty4-tls | headers | 50% | 94353 | 94306 | 0.37 | 0.87 | 1.46 | 1.83 | - |
+| dusty4-tls | headers | 75% | 141530 | 125505 | 0.47 | 1.14 | 1.83 | 2.81 | - |
+| dusty4-tls | headers | 100% | 188706 | 125590 | 0.47 | 1.12 | 1.81 | 2.81 | - |
+| dusty4-tls | browser | 50% | 89817 | 89790 | 0.39 | 0.93 | 1.58 | 1.92 | - |
+| dusty4-tls | browser | 75% | 134726 | 122378 | 0.48 | 1.12 | 1.86 | 2.93 | - |
+| dusty4-tls | browser | 100% | 179634 | 114103 | 0.48 | 1.49 | 13.17 | 2.81 | - |
+| relic-io-tls | plaintext | 50% | 4657 | 4655 | 0.88 | 6.85 | 49.29 | 0.82 | - |
+| relic-io-tls | plaintext | 75% | 6985 | 6983 | 1.10 | 7.32 | 43.63 | 1.12 | - |
+| relic-io-tls | plaintext | 100% | 9313 | 9308 | 6.61 | 7.99 | 40.98 | 1.49 | - |
+| relic-io-tls | headers | 50% | 3379 | 3377 | 0.88 | 11.30 | 54.05 | 0.75 | - |
+| relic-io-tls | headers | 75% | 5069 | 5067 | 1.02 | 9.50 | 51.89 | 1.04 | - |
+| relic-io-tls | headers | 100% | 6758 | 6749 | 9.24 | 11.64 | 47.26 | 1.35 | - |
+| relic-io-tls | browser | 50% | 3079 | 3078 | 0.93 | 11.43 | 55.46 | 0.74 | - |
+| relic-io-tls | browser | 75% | 4619 | 4618 | 1.02 | 11.51 | 52.32 | 1.04 | - |
+| relic-io-tls | browser | 100% | 6158 | 6153 | 10.12 | 12.62 | 50.08 | 1.33 | - |
+| relic-native-tls | plaintext | 50% | 39981 | 39960 | 0.79 | 1.32 | 1.85 | 0.60 | - |
+| relic-native-tls | plaintext | 75% | 59972 | 59952 | 0.96 | 1.38 | 2.11 | 0.81 | - |
+| relic-native-tls | plaintext | 100% | 79962 | 71857 | 0.83 | 1.43 | 2.51 | 0.91 | - |
+| relic-native-tls | headers | 50% | 23793 | 23787 | 1.16 | 2.14 | 2.85 | 0.60 | - |
+| relic-native-tls | headers | 75% | 35689 | 35677 | 1.27 | 2.03 | 3.77 | 0.81 | - |
+| relic-native-tls | headers | 100% | 47585 | 46870 | 1.28 | 2.02 | 3.91 | 0.93 | - |
+| relic-native-tls | browser | 50% | 18010 | 18003 | 1.09 | 2.54 | 4.95 | 0.60 | - |
+| relic-native-tls | browser | 75% | 27015 | 27005 | 1.78 | 2.58 | 5.25 | 0.80 | - |
+| relic-native-tls | browser | 100% | 36020 | 34686 | 1.76 | 2.62 | 5.70 | 0.94 | - |
+| relic-native-handler-tls | plaintext | 50% | 40821 | 40808 | 0.95 | 1.47 | 2.43 | 0.64 | - |
+| relic-native-handler-tls | plaintext | 75% | 61231 | 61211 | 0.88 | 1.80 | 15.36 | 0.84 | - |
+| relic-native-handler-tls | plaintext | 100% | 81641 | 71789 | 0.83 | 1.57 | 2.16 | 0.91 | - |
+| relic-native-handler-tls | headers | 50% | 25705 | 25693 | 1.30 | 2.19 | 3.54 | 0.63 | - |
+| relic-native-handler-tls | headers | 75% | 38557 | 38546 | 1.11 | 1.71 | 3.43 | 0.77 | - |
+| relic-native-handler-tls | headers | 100% | 51409 | 50772 | 1.19 | 1.85 | 2.42 | 0.93 | - |
+| relic-native-handler-tls | browser | 50% | 17672 | 17668 | 1.17 | 18.35 | 29.99 | 0.63 | - |
+| relic-native-handler-tls | browser | 75% | 26507 | 26497 | 1.74 | 2.63 | 5.71 | 0.79 | - |
+| relic-native-handler-tls | browser | 100% | 35343 | 35133 | 1.74 | 2.48 | 5.42 | 0.93 | - |
+| relic-native4-tls | plaintext | 50% | 66353 | 66334 | 0.38 | 0.69 | 1.39 | 1.63 | - |
+| relic-native4-tls | plaintext | 75% | 99530 | 99481 | 0.44 | 1.01 | 1.66 | 2.60 | - |
+| relic-native4-tls | plaintext | 100% | 132706 | 115228 | 0.51 | 1.13 | 1.77 | 2.97 | - |
+| relic-native4-tls | headers | 50% | 51211 | 51196 | 0.47 | 1.04 | 1.64 | 1.81 | - |
+| relic-native4-tls | headers | 75% | 76817 | 76789 | 0.46 | 1.05 | 1.84 | 2.37 | - |
+| relic-native4-tls | headers | 100% | 102422 | 94276 | 0.63 | 1.27 | 1.81 | 3.25 | - |
+| relic-native4-tls | browser | 50% | 36519 | 36509 | 0.63 | 2.03 | 2.80 | 1.79 | - |
+| relic-native4-tls | browser | 75% | 54779 | 54762 | 0.74 | 1.92 | 3.17 | 2.65 | - |
+| relic-native4-tls | browser | 100% | 73038 | 71391 | 0.82 | 1.66 | 3.12 | 3.33 | - |
+| relic-native4-handler-tls | plaintext | 50% | 72038 | 72018 | 0.37 | 0.73 | 1.51 | 1.73 | - |
+| relic-native4-handler-tls | plaintext | 75% | 108057 | 107433 | 0.52 | 1.10 | 1.73 | 2.88 | - |
+| relic-native4-handler-tls | plaintext | 100% | 144076 | 115449 | 0.51 | 1.10 | 1.78 | 2.96 | - |
+| relic-native4-handler-tls | headers | 50% | 51682 | 51657 | 0.45 | 1.01 | 1.82 | 1.73 | - |
+| relic-native4-handler-tls | headers | 75% | 77523 | 77484 | 0.46 | 1.04 | 1.76 | 2.39 | - |
+| relic-native4-handler-tls | headers | 100% | 103364 | 98708 | 0.60 | 1.20 | 1.82 | 3.26 | - |
+| relic-native4-handler-tls | browser | 50% | 39282 | 39265 | 0.50 | 1.07 | 1.89 | 1.54 | - |
+| relic-native4-handler-tls | browser | 75% | 58923 | 58907 | 0.58 | 1.17 | 2.00 | 2.29 | - |
+| relic-native4-handler-tls | browser | 100% | 78564 | 78537 | 0.75 | 1.43 | 1.99 | 3.40 | - |
+| shelf-tls | plaintext | 50% | 3880 | 3879 | 0.92 | 11.60 | 51.76 | 0.81 | - |
+| shelf-tls | plaintext | 75% | 5819 | 5817 | 1.06 | 8.56 | 50.39 | 1.07 | - |
+| shelf-tls | plaintext | 100% | 7759 | 7757 | 7.63 | 10.15 | 45.22 | 1.41 | - |
+| shelf-tls | headers | 50% | 2952 | 2951 | 0.95 | 16.74 | 59.69 | 0.76 | - |
+| shelf-tls | headers | 75% | 4428 | 4427 | 1.03 | 11.58 | 53.24 | 1.03 | - |
+| shelf-tls | headers | 100% | 5904 | 5901 | 10.58 | 12.75 | 49.41 | 1.33 | - |
+| shelf-tls | browser | 50% | 2710 | 2710 | 0.93 | 18.44 | 64.08 | 0.74 | - |
+| shelf-tls | browser | 75% | 4064 | 4062 | 0.99 | 12.07 | 54.84 | 1.02 | - |
+| shelf-tls | browser | 100% | 5419 | 5416 | 11.53 | 14.06 | 53.21 | 1.28 | - |
+| shelf4-tls | plaintext | 50% | 8454 | 8451 | 0.89 | 3.66 | 19.74 | 2.03 | - |
+| shelf4-tls | plaintext | 75% | 12680 | 12677 | 1.06 | 3.76 | 17.27 | 3.37 | - |
+| shelf4-tls | plaintext | 100% | 16907 | 16901 | 3.52 | 6.05 | 9.78 | 4.92 | - |
+| shelf4-tls | headers | 50% | 7334 | 7331 | 1.07 | 4.12 | 19.99 | 2.07 | - |
+| shelf4-tls | headers | 75% | 11000 | 10990 | 1.45 | 4.51 | 22.69 | 3.16 | - |
+| shelf4-tls | headers | 100% | 14667 | 14663 | 1.73 | 4.76 | 8.05 | 4.62 | - |
+| shelf4-tls | browser | 50% | 7159 | 7158 | 1.19 | 4.43 | 21.15 | 2.11 | - |
+| shelf4-tls | browser | 75% | 10738 | 10735 | 1.26 | 4.56 | 19.54 | 3.32 | - |
+| shelf4-tls | browser | 100% | 14317 | 14139 | 4.32 | 7.20 | 10.59 | 4.83 | - |
+| hyper2-tls | plaintext | 50% | 60804 | 60770 | 0.44 | 1.03 | 1.63 | 1.00 | - |
+| hyper2-tls | plaintext | 75% | 91206 | 91179 | 0.37 | 0.82 | 1.37 | 1.14 | - |
+| hyper2-tls | plaintext | 100% | 121608 | 110937 | 0.51 | 1.28 | 13.18 | 1.59 | - |
+| hyper2-tls | headers | 50% | 58388 | 58358 | 0.40 | 0.97 | 1.65 | 0.97 | - |
+| hyper2-tls | headers | 75% | 87582 | 87551 | 0.50 | 1.22 | 1.89 | 1.42 | - |
+| hyper2-tls | headers | 100% | 116776 | 112329 | 0.55 | 1.01 | 1.54 | 1.72 | - |
+| hyper2-tls | browser | 50% | 50413 | 50389 | 0.41 | 1.01 | 1.70 | 0.96 | - |
+| hyper2-tls | browser | 75% | 75619 | 75599 | 0.49 | 1.07 | 1.67 | 1.29 | - |
+| hyper2-tls | browser | 100% | 100825 | 100401 | 0.62 | 1.09 | 1.59 | 1.76 | - |
+| dusty2-tls | plaintext | 50% | 77399 | 77375 | 0.35 | 0.82 | 1.49 | 0.96 | - |
+| dusty2-tls | plaintext | 75% | 116099 | 116038 | 0.39 | 0.87 | 1.50 | 1.44 | - |
+| dusty2-tls | plaintext | 100% | 154798 | 130042 | 0.46 | 0.97 | 1.64 | 1.66 | - |
+| dusty2-tls | headers | 50% | 65811 | 65777 | 0.36 | 0.77 | 1.54 | 0.96 | - |
+| dusty2-tls | headers | 75% | 98716 | 98665 | 0.37 | 0.84 | 1.40 | 1.29 | - |
+| dusty2-tls | headers | 100% | 131621 | 116245 | 0.52 | 0.99 | 1.59 | 1.73 | - |
+| dusty2-tls | browser | 50% | 66917 | 66887 | 0.36 | 0.82 | 1.42 | 1.03 | - |
+| dusty2-tls | browser | 75% | 100376 | 100323 | 0.40 | 0.89 | 1.41 | 1.45 | - |
+| dusty2-tls | browser | 100% | 133834 | 108888 | 0.53 | 1.17 | 15.20 | 1.67 | - |
+| relic-native2-tls | plaintext | 50% | 56888 | 56873 | 0.50 | 0.89 | 1.64 | 0.99 | - |
+| relic-native2-tls | plaintext | 75% | 85331 | 85308 | 0.45 | 0.86 | 1.35 | 1.33 | - |
+| relic-native2-tls | plaintext | 100% | 113775 | 107801 | 0.54 | 1.04 | 1.55 | 1.74 | - |
+| relic-native2-tls | headers | 50% | 40267 | 40254 | 0.89 | 1.26 | 2.22 | 1.17 | - |
+| relic-native2-tls | headers | 75% | 60401 | 60384 | 0.71 | 1.20 | 1.65 | 1.50 | - |
+| relic-native2-tls | headers | 100% | 80534 | 73039 | 0.79 | 1.43 | 2.00 | 1.78 | - |
+| relic-native2-tls | browser | 50% | 28729 | 28715 | 0.80 | 1.25 | 4.95 | 0.98 | - |
+| relic-native2-tls | browser | 75% | 43093 | 43080 | 0.93 | 1.31 | 2.44 | 1.42 | - |
+| relic-native2-tls | browser | 100% | 57457 | 55504 | 1.09 | 1.64 | 3.21 | 1.80 | - |
+| relic-native2-handler-tls | plaintext | 50% | 60130 | 60114 | 0.68 | 1.12 | 1.83 | 1.14 | - |
+| relic-native2-handler-tls | plaintext | 75% | 90195 | 90170 | 0.43 | 0.90 | 1.46 | 1.45 | - |
+| relic-native2-handler-tls | plaintext | 100% | 120260 | 111950 | 0.52 | 1.17 | 1.58 | 1.73 | - |
+| relic-native2-handler-tls | headers | 50% | 41068 | 41057 | 0.85 | 3.26 | 14.93 | 1.17 | - |
+| relic-native2-handler-tls | headers | 75% | 61602 | 61584 | 0.68 | 1.19 | 1.96 | 1.53 | - |
+| relic-native2-handler-tls | headers | 100% | 82136 | 76620 | 0.75 | 1.33 | 1.76 | 1.79 | - |
+| relic-native2-handler-tls | browser | 50% | 29704 | 29696 | 0.91 | 1.37 | 5.01 | 1.08 | - |
+| relic-native2-handler-tls | browser | 75% | 44555 | 44542 | 1.08 | 1.42 | 2.52 | 1.54 | - |
+| relic-native2-handler-tls | browser | 100% | 59407 | 55648 | 1.09 | 1.65 | 3.09 | 1.80 | - |
+| shelf2-tls | plaintext | 50% | 6745 | 6744 | 0.90 | 4.93 | 30.93 | 1.40 | - |
+| shelf2-tls | plaintext | 75% | 10118 | 10102 | 1.21 | 8.98 | 24.84 | 2.19 | - |
+| shelf2-tls | plaintext | 100% | 13490 | 13138 | 4.79 | 5.43 | 14.91 | 2.73 | - |
+| shelf2-tls | headers | 50% | 5220 | 5219 | 0.92 | 6.43 | 32.74 | 1.35 | - |
+| shelf2-tls | headers | 75% | 7830 | 7825 | 1.22 | 6.50 | 31.57 | 1.97 | - |
+| shelf2-tls | headers | 100% | 10440 | 10208 | 6.19 | 7.10 | 27.68 | 2.58 | - |
+| shelf2-tls | browser | 50% | 4749 | 4747 | 0.94 | 7.26 | 35.80 | 1.30 | - |
+| shelf2-tls | browser | 75% | 7123 | 7120 | 1.42 | 7.22 | 31.98 | 1.93 | - |
+| shelf2-tls | browser | 100% | 9497 | 9363 | 6.73 | 7.63 | 28.66 | 2.51 | - |
+| relic-io2-tls | plaintext | 50% | 7722 | 7719 | 0.88 | 4.27 | 28.03 | 1.43 | - |
+| relic-io2-tls | plaintext | 75% | 11583 | 11578 | 1.13 | 4.64 | 26.52 | 2.15 | - |
+| relic-io2-tls | plaintext | 100% | 15444 | 14849 | 4.22 | 6.69 | 9.48 | 2.88 | - |
+| relic-io2-tls | headers | 50% | 5769 | 5767 | 0.90 | 5.75 | 32.68 | 1.34 | - |
+| relic-io2-tls | headers | 75% | 8654 | 8649 | 1.15 | 6.23 | 30.21 | 1.97 | - |
+| relic-io2-tls | headers | 100% | 11538 | 11533 | 5.36 | 10.16 | 21.86 | 2.61 | - |
+| relic-io2-tls | browser | 50% | 5370 | 5369 | 0.95 | 6.17 | 32.29 | 1.32 | - |
+| relic-io2-tls | browser | 75% | 8054 | 8052 | 1.33 | 6.38 | 30.53 | 1.97 | - |
+| relic-io2-tls | browser | 100% | 10739 | 10681 | 5.88 | 8.88 | 28.79 | 2.59 | - |
+| relic-io4-tls | plaintext | 50% | 8872 | 8870 | 0.82 | 3.64 | 18.89 | 2.17 | - |
+| relic-io4-tls | plaintext | 75% | 13308 | 13305 | 1.18 | 3.75 | 6.17 | 2.85 | - |
+| relic-io4-tls | plaintext | 100% | 17744 | 17739 | 1.92 | 4.26 | 5.51 | 4.62 | - |
+| relic-io4-tls | headers | 50% | 7981 | 7977 | 1.03 | 20.62 | 66.94 | 2.27 | - |
+| relic-io4-tls | headers | 75% | 11972 | 11969 | 1.05 | 4.30 | 18.67 | 3.33 | - |
+| relic-io4-tls | headers | 100% | 15962 | 15958 | 3.76 | 6.22 | 8.95 | 5.00 | - |
+| relic-io4-tls | browser | 50% | 7660 | 7657 | 0.86 | 4.06 | 19.73 | 2.19 | - |
+| relic-io4-tls | browser | 75% | 11490 | 11485 | 1.32 | 4.37 | 19.43 | 3.26 | - |
+| relic-io4-tls | browser | 100% | 15320 | 15316 | 1.56 | 4.63 | 5.72 | 4.81 | - |
+| relic-native-aot-tls | plaintext | 50% | 38634 | 38623 | 0.94 | 1.52 | 2.04 | 0.63 | - |
+| relic-native-aot-tls | plaintext | 75% | 57951 | 57932 | 0.68 | 1.07 | 1.53 | 0.69 | - |
+| relic-native-aot-tls | plaintext | 100% | 77268 | 77243 | 0.67 | 1.11 | 1.82 | 0.86 | - |
+| relic-native-aot-tls | headers | 50% | 29295 | 29285 | 1.06 | 1.70 | 4.85 | 0.63 | - |
+| relic-native-aot-tls | headers | 75% | 43942 | 43920 | 0.98 | 1.61 | 2.47 | 0.76 | - |
+| relic-native-aot-tls | headers | 100% | 58589 | 47316 | 1.25 | 1.91 | 2.82 | 0.93 | - |
+| relic-native-aot-tls | browser | 50% | 18333 | 18328 | 1.12 | 2.45 | 3.17 | 0.63 | - |
+| relic-native-aot-tls | browser | 75% | 27500 | 27489 | 1.77 | 2.52 | 4.42 | 0.81 | - |
+| relic-native-aot-tls | browser | 100% | 36666 | 33272 | 1.84 | 2.69 | 4.99 | 0.93 | - |
+| relic-native-handler-aot-tls | plaintext | 50% | 39823 | 39804 | 0.64 | 1.10 | 1.36 | 0.54 | - |
+| relic-native-handler-aot-tls | plaintext | 75% | 59734 | 59715 | 0.94 | 1.27 | 1.61 | 0.77 | - |
+| relic-native-handler-aot-tls | plaintext | 100% | 79645 | 79614 | 0.65 | 1.08 | 1.49 | 0.86 | - |
+| relic-native-handler-aot-tls | headers | 50% | 28083 | 28072 | 1.41 | 2.17 | 5.64 | 0.65 | - |
+| relic-native-handler-aot-tls | headers | 75% | 42124 | 42108 | 0.95 | 1.34 | 1.94 | 0.72 | - |
+| relic-native-handler-aot-tls | headers | 100% | 56165 | 56052 | 1.05 | 1.70 | 2.59 | 0.91 | - |
+| relic-native-handler-aot-tls | browser | 50% | 18144 | 18136 | 0.89 | 1.71 | 5.13 | 0.57 | - |
+| relic-native-handler-aot-tls | browser | 75% | 27215 | 27201 | 1.04 | 2.16 | 5.70 | 0.70 | - |
+| relic-native-handler-aot-tls | browser | 100% | 36287 | 34102 | 1.79 | 2.61 | 5.30 | 0.93 | - |
+| relic-native2-aot-tls | plaintext | 50% | 58137 | 58110 | 0.45 | 0.74 | 1.70 | 0.94 | - |
+| relic-native2-aot-tls | plaintext | 75% | 87205 | 87175 | 0.41 | 0.87 | 1.43 | 1.20 | - |
+| relic-native2-aot-tls | plaintext | 100% | 116273 | 111346 | 0.53 | 0.99 | 1.59 | 1.74 | - |
+| relic-native2-aot-tls | headers | 50% | 45115 | 45103 | 0.56 | 0.94 | 1.55 | 0.98 | - |
+| relic-native2-aot-tls | headers | 75% | 67673 | 67654 | 0.59 | 1.58 | 14.23 | 1.32 | - |
+| relic-native2-aot-tls | headers | 100% | 90230 | 90205 | 0.60 | 1.02 | 1.50 | 1.67 | - |
+| relic-native2-aot-tls | browser | 50% | 33013 | 33004 | 0.89 | 1.53 | 2.78 | 1.22 | - |
+| relic-native2-aot-tls | browser | 75% | 49520 | 49506 | 1.09 | 1.46 | 2.57 | 1.64 | - |
+| relic-native2-aot-tls | browser | 100% | 66026 | 55030 | 1.09 | 1.67 | 3.06 | 1.80 | - |
+| relic-native4-aot-tls | plaintext | 50% | 88307 | 88264 | 0.37 | 0.84 | 1.50 | 1.94 | - |
+| relic-native4-aot-tls | plaintext | 75% | 132460 | 124033 | 0.48 | 1.11 | 1.72 | 2.97 | - |
+| relic-native4-aot-tls | plaintext | 100% | 176613 | 117153 | 0.50 | 1.19 | 1.82 | 2.96 | - |
+| relic-native4-aot-tls | headers | 50% | 57093 | 57075 | 0.40 | 0.89 | 1.92 | 1.65 | - |
+| relic-native4-aot-tls | headers | 75% | 85640 | 85613 | 0.43 | 1.10 | 1.72 | 2.43 | - |
+| relic-native4-aot-tls | headers | 100% | 114186 | 107666 | 0.54 | 1.28 | 1.97 | 3.01 | - |
+| relic-native4-aot-tls | browser | 50% | 46425 | 46404 | 0.51 | 1.06 | 2.03 | 1.82 | - |
+| relic-native4-aot-tls | browser | 75% | 69638 | 69603 | 0.48 | 1.15 | 1.90 | 2.31 | - |
+| relic-native4-aot-tls | browser | 100% | 92850 | 89628 | 0.66 | 1.35 | 1.95 | 3.39 | - |
+| relic-io-aot-tls | plaintext | 50% | 4689 | 4688 | 0.87 | 6.71 | 39.16 | 0.82 | - |
+| relic-io-aot-tls | plaintext | 75% | 7033 | 7031 | 1.08 | 6.70 | 36.55 | 1.10 | - |
+| relic-io-aot-tls | plaintext | 100% | 9377 | 9367 | 2.49 | 7.86 | 30.30 | 1.49 | - |
+| relic-io-aot-tls | headers | 50% | 3508 | 3508 | 0.92 | 8.99 | 42.35 | 0.75 | - |
+| relic-io-aot-tls | headers | 75% | 5261 | 5259 | 1.03 | 8.94 | 42.57 | 1.06 | - |
+| relic-io-aot-tls | headers | 100% | 7015 | 7011 | 8.90 | 10.96 | 38.38 | 1.37 | - |
+| relic-io-aot-tls | browser | 50% | 3232 | 3231 | 0.90 | 10.30 | 43.89 | 0.76 | - |
+| relic-io-aot-tls | browser | 75% | 4847 | 4846 | 1.00 | 9.80 | 43.07 | 1.04 | - |
+| relic-io-aot-tls | browser | 100% | 6463 | 6458 | 9.62 | 11.66 | 40.12 | 1.35 | - |
