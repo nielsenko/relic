@@ -117,6 +117,7 @@ td.n, th.n { text-align: right; }
   <button id="tab-one" aria-pressed="false" data-f="1">One isolate or thread</button>
   <button id="tab-two" aria-pressed="false" data-f="2">Two</button>
   <button id="tab-four" aria-pressed="false" data-f="4">Four</button>
+  <button id="tab-eight" aria-pressed="false" data-f="8">Eight</button>
 </div>
 
 <section class="panel" id="p-plaintext"><h2>Plaintext</h2><p class="sub">GET /plaintext, 13-byte body, no request headers to parse. Sorted by this route.</p><div class="chart"></div></section>
@@ -334,11 +335,11 @@ function latencyChart(el, kind) {
 function barChart(el, key, cores) {
   const data = visible().filter(d => d[key] !== undefined).sort((a,b) => b[key] - a[key]);
   const label = cores ? fmtCores : fmt;
-  const left = 200, right = 56, rowH = 24, top = 8, bottom = 22;
+  const left = 200, right = 150, rowH = 24, top = 8, bottom = 22;
   const w = 880, plotW = w - left - right;
   const h = top + data.length * rowH + bottom;
   const max = Math.max(...data.map(d => d[key]));
-  const step = cores ? 0.5 : max > 100 ? 25 : 10;
+  const step = cores ? 0.5 : max > 400 ? 100 : max > 200 ? 50 : max > 100 ? 25 : 10;
   const axisMax = Math.ceil(max / step) * step;
   const x = v => left + v / axisMax * plotW;
   let s = `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="${key} requests per second by target">` + defs();
@@ -392,7 +393,7 @@ function render() {
   barChart(document.querySelector("#p-plaintext .chart"), "plaintext");
   barChart(document.querySelector("#p-headers .chart"), "headers");
   barChart(document.querySelector("#p-browser .chart"), "browser");
-  document.getElementById("p-aot").hidden = transport !== "http";
+  document.getElementById("p-aot").hidden = transport !== "http" || !visible().some(r => r.mode === "AOT");
   document.getElementById("p-tls").hidden = transport !== "https";
   if (transport === "https") tlsChart(document.querySelector("#p-tls .chart"));
   latencyChart(document.querySelector("#p-lat-load .chart"), "load");
@@ -401,6 +402,10 @@ function render() {
   document.getElementById("p-cores").hidden = !hasCores;
   if (hasCores) barChart(document.querySelector("#p-cores .chart"), "plaintextCores", true);
   aotChart(document.querySelector("#p-aot .chart"));
+}
+
+for (const b of document.querySelectorAll("#tabs button")) {
+  if (b.dataset.f !== "all" && !rows.some(r => r.iso === Number(b.dataset.f))) b.hidden = true;
 }
 
 document.getElementById("lroute").addEventListener("click", e => {

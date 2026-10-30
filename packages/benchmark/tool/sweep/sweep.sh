@@ -10,15 +10,18 @@
 # QUIET=1 waits for a one-minute load average under 1.5 before every
 # target, up to 15 minutes. PAUSE is the seconds after a target. OUT is
 # the output directory, sweep-out beside this package by default. LOAD
-# is the http_load argument list. The baselines must be built first, see
-# the comments at the top of baselines/*/.
+# is the http_load argument list. OHA_THREADS sizes oha's runtime, 4 by
+# default. The eight-way targets run on 16 cores or more, or when named in
+# ONLY. The baselines must be built first, see the comments at the top of
+# baselines/*/.
 set -u
 R=$(cd "$(dirname "$0")/../.." && pwd)
 C=$R/../relic_native/test/certs
 export RELIC_TEST_CERTS=$C
 N=${OUT:-$R/sweep-out}
 mkdir -p "$N"
-LOAD=${LOAD:-"--workloads=plaintext,headers,browser --connections=64 --seconds=5 --loads=0.5,0.75,0.9,0.95,1.0 --saturation-runs=5"}
+OHA_THREADS=${OHA_THREADS:-4}
+LOAD=${LOAD:-"--workloads=plaintext,headers,browser --connections=64 --seconds=5 --loads=0.5,0.75,0.9,0.95,1.0 --saturation-runs=5 --oha-threads=$OHA_THREADS"}
 QUIET=${QUIET:-1}
 PAUSE=${PAUSE:-60}
 ONLY=${ONLY:-}
@@ -42,8 +45,14 @@ listeners() {
   if command -v lsof >/dev/null; then lsof -nP -iTCP:"$1" -sTCP:LISTEN -t 2>/dev/null
   else ss -ltnpH "sport = :$1" 2>/dev/null | grep -o 'pid=[0-9]*' | cut -d= -f2; fi
 }
+cores() {
+  if [[ -r /proc/cpuinfo ]]; then nproc; else sysctl -n hw.physicalcpu; fi
+}
 wanted() {
-  [[ -z $ONLY ]] && return 0
+  if [[ -z $ONLY ]]; then
+    [[ $1 =~ [a-z]8(-|$) ]] && (( $(cores) < 16 )) && return 1
+    return 0
+  fi
   for w in $ONLY; do [[ $w == "$1" ]] && return 0; done
   return 1
 }
@@ -147,4 +156,19 @@ scenario relic-native-handler-aot-tls relic-native-handler-aot-tls=https://127.0
 scenario relic-native2-aot-tls relic-native2-aot-tls=https://127.0.0.1:18503 -- "$B" native 2 tls 18503
 scenario relic-native4-aot-tls relic-native4-aot-tls=https://127.0.0.1:18504 -- "$B" native 4 tls 18504
 scenario relic-io-aot-tls relic-io-aot-tls=https://127.0.0.1:18505 -- "$B" io 1 tls 18505
+# eight-way
+scenario hyper8 hyper8=http://127.0.0.1:8690 -- "$H" 8690 8
+scenario dusty8 dusty8=http://127.0.0.1:8693 -- "$Z" 8693 8
+scenario relic-native8-aot relic-native8-aot=http://127.0.0.1:18801 -- "$B" native 8 notls 18801
+scenario relic-native8 relic-native8=native8
+scenario relic-native8-handler relic-native8-handler=native8-handler
+scenario relic-io8 relic-io8=io8
+scenario shelf8 shelf8=shelf8
+scenario hyper8-tls hyper8-tls=https://127.0.0.1:8790 -- "$H" 8790 8 "$C/localhost_cert.pem" "$C/localhost_key.pem"
+scenario dusty8-tls dusty8-tls=https://127.0.0.1:8793 -- "$Z" 8793 8 "$C/localhost_cert.pem" "$C/localhost_key.pem"
+scenario relic-native8-aot-tls relic-native8-aot-tls=https://127.0.0.1:18802 -- "$B" native 8 tls 18802
+scenario relic-native8-tls relic-native8-tls=native8 --tls
+scenario relic-native8-handler-tls relic-native8-handler-tls=native8-handler --tls
+scenario relic-io8-tls relic-io8-tls=io8 --tls
+scenario shelf8-tls shelf8-tls=shelf8 --tls
 echo "done $(date)" >> "$N/progress.log"
