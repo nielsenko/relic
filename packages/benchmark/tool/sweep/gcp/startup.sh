@@ -6,7 +6,8 @@
 #   relic-branch  the branch to sweep, chore-benchmark-sweep by default
 #   relic-patch   a patch to apply to the clone, none by default
 #   relic-bucket  the bucket for the results, relic-bench-nights by default
-#   sweep-env     environment for sweep.sh, "QUIET=0 PAUSE=5" by default
+#   sweep-env     environment for sweep.sh, "QUIET=0 PAUSE=5 OHA_THREADS=8"
+#                 by default
 #   sweep-only    a space-separated list of targets, all by default
 #   keep          1 leaves the instance running after the sweep
 # Progress is in the serial console and /var/log/relic-sweep.log.
@@ -25,7 +26,7 @@ REPO=$(md relic-repo https://github.com/nielsenko/relic.git)
 BRANCH=$(md relic-branch chore-benchmark-sweep)
 PATCH=$(md relic-patch "")
 BUCKET=$(md relic-bucket relic-bench-nights)
-ENVS=$(md sweep-env "QUIET=0 PAUSE=5")
+ENVS=$(md sweep-env "QUIET=0 PAUSE=5 OHA_THREADS=8")
 ONLY=$(md sweep-only "")
 KEEP=$(md keep 0)
 NAME=$(curl -sf -H 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/instance/name)
@@ -102,6 +103,7 @@ su - bench -c "export PATH=\$HOME/.cargo/bin:/usr/lib/dart/bin:\$PATH; cd relic/
   echo "kernel: $(uname -r)"
   echo "smt: $(cat /sys/devices/system/cpu/smt/control 2>/dev/null || echo unknown)"
   echo "governor: $(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null || echo none)"
+  echo "io_uring_disabled: $(sysctl -n kernel.io_uring_disabled 2>/dev/null || echo unknown)"
 } >> "$OUT/machine.txt"
 cp /var/log/relic-sweep.log "$OUT/"
 

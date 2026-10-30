@@ -25,6 +25,12 @@ what = {
  "relic-native-handler":("Relic on zio, 1 isolate, no router","JIT","zio",1),
  "relic-native4":("Relic on zio, 4 isolates","JIT","zio",4),
  "relic-native4-handler":("Relic on zio, 4 isolates, no router","JIT","zio",4),
+ "hyper8":("bare Rust, 8 threads","native","other",8),
+ "dusty8":("bare Zig on zio, 8 executors","native","other",8),
+ "shelf8":("shelf on dart:io, 8 isolates","JIT","other",8),
+ "relic-io8":("Relic IOAdapter on dart:io, 8 isolates","JIT","ioadapter",8),
+ "relic-native8":("Relic on zio, 8 isolates","JIT","zio",8),
+ "relic-native8-handler":("Relic on zio, 8 isolates, no router","JIT","zio",8),
 }
 rows = {}
 loads = {0.5: 0, 0.75: 1, 0.9: 2, 0.95: 3, 1.0: 4}

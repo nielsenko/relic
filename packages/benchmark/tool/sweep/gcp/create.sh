@@ -25,7 +25,7 @@ case $TYPE in
   *-metal) ;;
   *) FLAGS+=(--threads-per-core=1 --provisioning-model=SPOT --instance-termination-action=STOP "--max-run-duration=${MAX_RUN:-8h}") ;;
 esac
-META="relic-branch=${RELIC_BRANCH:-chore-benchmark-sweep},sweep-env=${SWEEP_ENV:-QUIET=0 PAUSE=5},keep=${KEEP:-0}"
+META="relic-branch=${RELIC_BRANCH:-chore-benchmark-sweep},sweep-env=${SWEEP_ENV:-QUIET=0 PAUSE=5 OHA_THREADS=8},keep=${KEEP:-0}"
 [[ -n ${SWEEP_ONLY:-} ]] && META="$META,sweep-only=$SWEEP_ONLY"
 FILES="startup-script=$S/startup.sh"
 [[ -n ${RELIC_PATCH:-} ]] && FILES="$FILES,relic-patch=$RELIC_PATCH"
