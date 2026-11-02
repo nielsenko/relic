@@ -42,6 +42,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const zio = @import("zio");
 const tls = @import("ztls");
+const z = @import("zlib");
 const dart = @import("dart_dl");
 const pem_key = @import("pem_key.zig");
 const header_names = @import("header_names.zig");
@@ -349,6 +350,8 @@ const Exchange = struct {
     /// A WebSocket message over this many bytes closes the connection
     /// with 1009.
     ws_max_message: u32 = 0,
+    /// The permessage-deflate terms of a WebSocket, or off.
+    ws_deflate: WsDeflate = .{},
     /// Set by Dart when it answered, aborted or hijacked.
     done: zio.Event = .init,
     /// Set by Dart when a handler asks for `cancelled`. The task then
@@ -390,6 +393,13 @@ const Exchange = struct {
     /// Dart frees a message with relic_free.
     ws_message: std.ArrayListUnmanaged(u8) = .empty,
     ws_message_opcode: ?WsOpcode = null,
+    /// The message being assembled is compressed, as its first frame
+    /// said.
+    ws_message_compressed: bool = false,
+    /// Inflates the peer's compressed messages, and the last one
+    /// inflated. zlib points back into the inflater, so it must not move.
+    ws_inflater: ?Inflater = null,
+    ws_inflated: std.ArrayListUnmanaged(u8) = .empty,
     /// A writer task is writing Dart's output. It ends once none is left.
     writing: bool = false,
     /// Set when a writer ends, whether it wrote everything or a write
@@ -1001,6 +1011,8 @@ fn endConn(c: *Connection) void {
         // What Dart did not take.
         freeChunks(r.gpa, &c.ex.in);
         c.ex.ws_message.deinit(dart_bytes);
+        if (c.ex.ws_inflater) |*inflater| inflater.deinit();
+        c.ex.ws_inflated.deinit(dart_bytes);
         _ = r.active.fetchSub(1, .monotonic);
         _ = r.idle.fetchAdd(1, .monotonic);
     }
@@ -2062,9 +2074,122 @@ const WsKind = enum(u8) {
 
 const FrameHead = struct {
     fin: bool,
+    /// The first frame of a compressed message (RFC 7692 6).
+    rsv1: bool,
     opcode: WsOpcode,
     len: u64,
     mask: [4]u8,
+};
+
+/// The permessage-deflate terms of a WebSocket (RFC 7692), as Dart
+/// negotiated them.
+const WsDeflate = struct {
+    enabled: bool = false,
+    /// Every message from this side starts from an empty window.
+    server_no_context_takeover: bool = false,
+    /// Every message from the peer starts from an empty window.
+    client_no_context_takeover: bool = false,
+    /// The window this side compresses with, 9 to 15.
+    server_window_bits: u8 = 15,
+    /// The window the peer compresses with at most, 8 to 15.
+    client_window_bits: u8 = 15,
+    /// The deflate level, 1 to 9.
+    level: u8 = 6,
+    /// A message under this many bytes goes out as is.
+    threshold: u32 = 0,
+};
+
+/// The four bytes a sync flush ends with, which the sender strips and the
+/// receiver appends again (RFC 7692 7.2).
+const deflate_tail = [_]u8{ 0x00, 0x00, 0xff, 0xff };
+
+/// A raw deflate stream for the messages this side sends. The window
+/// carries over between messages unless the terms say otherwise. zlib
+/// keeps the stream's address, so one is initialised where it lives.
+const Deflater = struct {
+    strm: z.z_stream,
+
+    fn init(self: *Deflater, terms: WsDeflate) error{ZlibFailed}!void {
+        self.strm = std.mem.zeroes(z.z_stream);
+        const rc = z.deflateInit2_(&self.strm, terms.level, z.Z_DEFLATED, -@as(c_int, terms.server_window_bits), 8, z.Z_DEFAULT_STRATEGY, z.ZLIB_VERSION, @sizeOf(z.z_stream));
+        if (rc != z.Z_OK) return error.ZlibFailed;
+    }
+
+    fn deinit(self: *Deflater) void {
+        _ = z.deflateEnd(&self.strm);
+    }
+
+    fn reset(self: *Deflater) void {
+        _ = z.deflateReset(&self.strm);
+    }
+
+    /// Compresses `input` into `out`, flushed, with the sync-flush tail
+    /// stripped. `out` is cleared first.
+    fn compress(self: *Deflater, gpa: std.mem.Allocator, input: []const u8, out: *std.ArrayListUnmanaged(u8)) error{ OutOfMemory, ZlibFailed }!void {
+        out.clearRetainingCapacity();
+        self.strm.next_in = @constCast(input.ptr);
+        self.strm.avail_in = @intCast(input.len);
+        try out.ensureUnusedCapacity(gpa, z.deflateBound(&self.strm, @intCast(input.len)) + 16);
+        while (true) {
+            if (out.unusedCapacitySlice().len == 0) try out.ensureUnusedCapacity(gpa, out.capacity);
+            const slot = out.unusedCapacitySlice();
+            self.strm.next_out = slot.ptr;
+            self.strm.avail_out = @intCast(slot.len);
+            const rc = z.deflate(&self.strm, z.Z_SYNC_FLUSH);
+            if (rc != z.Z_OK and rc != z.Z_BUF_ERROR) return error.ZlibFailed;
+            out.items.len += slot.len - self.strm.avail_out;
+            if (self.strm.avail_in == 0 and self.strm.avail_out != 0) break;
+        }
+        const n = out.items.len;
+        if (n < 4 or !std.mem.eql(u8, out.items[n - 4 ..], &deflate_tail)) return error.ZlibFailed;
+        out.items.len = n - 4;
+    }
+};
+
+/// A raw inflate stream for the messages the peer sends.
+const Inflater = struct {
+    strm: z.z_stream,
+
+    fn init(self: *Inflater, terms: WsDeflate) error{ZlibFailed}!void {
+        self.strm = std.mem.zeroes(z.z_stream);
+        const rc = z.inflateInit2_(&self.strm, -@as(c_int, terms.client_window_bits), z.ZLIB_VERSION, @sizeOf(z.z_stream));
+        if (rc != z.Z_OK) return error.ZlibFailed;
+    }
+
+    fn deinit(self: *Inflater) void {
+        _ = z.inflateEnd(&self.strm);
+    }
+
+    fn reset(self: *Inflater) void {
+        _ = z.inflateReset(&self.strm);
+    }
+
+    /// Decompresses `input`, which ends with the sync-flush tail already,
+    /// into `out`. `out` is cleared first. `TooBig` once it passes `max`.
+    fn decompress(self: *Inflater, gpa: std.mem.Allocator, input: []const u8, out: *std.ArrayListUnmanaged(u8), max: u64) error{ OutOfMemory, Corrupt, TooBig }!void {
+        out.clearRetainingCapacity();
+        self.strm.next_in = @constCast(input.ptr);
+        self.strm.avail_in = @intCast(input.len);
+        try out.ensureUnusedCapacity(gpa, @max(input.len * 4, 1024));
+        while (true) {
+            if (out.unusedCapacitySlice().len == 0) try out.ensureUnusedCapacity(gpa, out.capacity);
+            const slot = out.unusedCapacitySlice();
+            self.strm.next_out = slot.ptr;
+            self.strm.avail_out = @intCast(slot.len);
+            const rc = z.inflate(&self.strm, z.Z_SYNC_FLUSH);
+            out.items.len += slot.len - self.strm.avail_out;
+            if (out.items.len > max) return error.TooBig;
+            switch (rc) {
+                z.Z_OK, z.Z_BUF_ERROR => {},
+                // A final block ends the stream, which a peer should not
+                // send but some do. The next message starts a fresh one.
+                z.Z_STREAM_END => return self.reset(),
+                else => return error.Corrupt,
+            }
+            if (self.strm.avail_in == 0 and self.strm.avail_out != 0) return;
+            if (rc == z.Z_BUF_ERROR and self.strm.avail_out != 0) return error.Corrupt;
+        }
+    }
 };
 
 /// A frame the peer should not have sent, and the close code that answers
@@ -2078,14 +2203,16 @@ fn violation(code: u16, reason: []const u8) FrameHeadResult {
 }
 
 /// Reads a frame head as a server reads a client's (RFC 6455 5.2): no
-/// reserved bit, a known opcode, a mask, a control frame in one piece of
-/// at most 125 bytes, a continuation only inside a message and a new
-/// message only outside one, and a payload within `max`.
-fn readFrameHead(rd: *std.Io.Reader, in_message: bool, max: u64) std.Io.Reader.Error!FrameHeadResult {
+/// reserved bit but RSV1 on the first frame of a message when `deflate`
+/// was agreed (RFC 7692 6), a known opcode, a mask, a control frame in
+/// one piece of at most 125 bytes, a continuation only inside a message
+/// and a new message only outside one, and a payload within `max`.
+fn readFrameHead(rd: *std.Io.Reader, in_message: bool, max: u64, deflate: bool) std.Io.Reader.Error!FrameHeadResult {
     const first = try rd.takeArray(2);
     const b0 = first[0];
     const b1 = first[1];
-    if (b0 & 0x70 != 0) return violation(1002, "Reserved bits set");
+    if (b0 & 0x30 != 0) return violation(1002, "Reserved bits set");
+    const rsv1 = b0 & 0x40 != 0;
     const fin = b0 & 0x80 != 0;
     const opcode: WsOpcode = @fromBackingInt(@intCast(@as(u4, @truncate(b0))));
     switch (opcode) {
@@ -2094,6 +2221,7 @@ fn readFrameHead(rd: *std.Io.Reader, in_message: bool, max: u64) std.Io.Reader.E
         .close, .ping, .pong => if (!fin) return violation(1002, "A control frame cannot be fragmented"),
         _ => return violation(1002, "Unknown opcode"),
     }
+    if (rsv1 and (!deflate or opcode == .continuation or opcode.isControl())) return violation(1002, "Reserved bits set");
     if (b1 & 0x80 == 0) return violation(1002, "A client frame must be masked");
     var len: u64 = b1 & 0x7f;
     if (len >= 126) {
@@ -2107,7 +2235,7 @@ fn readFrameHead(rd: *std.Io.Reader, in_message: bool, max: u64) std.Io.Reader.E
         }
     }
     if (len > max) return violation(1009, "Frame too big");
-    return .{ .head = .{ .fin = fin, .opcode = opcode, .len = len, .mask = (try rd.takeArray(4)).* } };
+    return .{ .head = .{ .fin = fin, .rsv1 = rsv1, .opcode = opcode, .len = len, .mask = (try rd.takeArray(4)).* } };
 }
 
 /// XORs `data` with `mask`, repeated, sixteen bytes at a time.
@@ -2125,10 +2253,10 @@ fn unmask(data: []u8, mask: [4]u8) void {
 }
 
 /// Writes a server frame. Never masked (RFC 6455 5.1), with the length in
-/// the fewest bytes that hold it.
-fn writeFrame(w: *std.Io.Writer, opcode: WsOpcode, payload: []const u8) !void {
+/// the fewest bytes that hold it, and RSV1 set for a compressed payload.
+fn writeFrame(w: *std.Io.Writer, opcode: WsOpcode, payload: []const u8, rsv1: bool) !void {
     var head: [10]u8 = undefined;
-    head[0] = 0x80 | @as(u8, @backingInt(opcode));
+    head[0] = 0x80 | @as(u8, if (rsv1) 0x40 else 0) | @as(u8, @backingInt(opcode));
     var n: usize = 2;
     if (payload.len < 126) {
         head[1] = @intCast(payload.len);
@@ -2247,12 +2375,22 @@ fn wsRead(link: *Link, ex: *Exchange) error{Parked}!void {
     const rd = link.reader;
     const message = &ex.ws_message;
     const max: u64 = ex.ws_max_message;
+    const terms = ex.ws_deflate;
+    // The inflater carries the peer's context from message to message,
+    // so it outlives a task that ends while the connection is parked.
+    if (terms.enabled and ex.ws_inflater == null) {
+        ex.ws_inflater = .{ .strm = undefined };
+        ex.ws_inflater.?.init(terms) catch {
+            ex.ws_inflater = null;
+            return wsFail(ex, 1011, "Out of memory");
+        };
+    }
     while (true) {
         link.awaitInput() catch |err| {
             if (err == error.Parked) return error.Parked;
             return wsReadEnded(link, ex);
         };
-        const result = readFrameHead(rd, ex.ws_message_opcode != null, max) catch return wsReadEnded(link, ex);
+        const result = readFrameHead(rd, ex.ws_message_opcode != null, max, terms.enabled) catch return wsReadEnded(link, ex);
         const head = switch (result) {
             .head => |h| h,
             .violation => |v| return wsFail(ex, v.code, v.reason),
@@ -2272,6 +2410,7 @@ fn wsRead(link: *Link, ex: *Exchange) error{Parked}!void {
         }
         if (message.items.len + head.len > max) return wsFail(ex, 1009, "Message too big");
         const opcode = ex.ws_message_opcode orelse head.opcode;
+        if (ex.ws_message_opcode == null) ex.ws_message_compressed = head.rsv1;
         ex.ws_message_opcode = opcode;
         const len: usize = @intCast(head.len);
         message.ensureUnusedCapacity(dart_bytes, len) catch return wsFail(ex, 1011, "Out of memory");
@@ -2281,18 +2420,31 @@ fn wsRead(link: *Link, ex: *Exchange) error{Parked}!void {
         message.items.len += len;
         if (!head.fin) continue;
         ex.ws_message_opcode = null;
-        if (opcode == .text and !std.unicode.utf8ValidateSlice(message.items)) return wsFail(ex, 1007, "Text is not valid UTF-8");
-        if (ex.ws_close_sent) {
+        // A compressed message is inflated into `ws_inflated`, and
+        // `message` keeps its capacity for the next one.
+        const whole: *std.ArrayListUnmanaged(u8) = if (ex.ws_message_compressed) blk: {
+            message.appendSlice(dart_bytes, &deflate_tail) catch return wsFail(ex, 1011, "Out of memory");
+            ex.ws_inflater.?.decompress(dart_bytes, message.items, &ex.ws_inflated, max) catch |err| return switch (err) {
+                error.TooBig => wsFail(ex, 1009, "Message too big"),
+                error.Corrupt => wsFail(ex, 1007, "Invalid compressed data"),
+                error.OutOfMemory => wsFail(ex, 1011, "Out of memory"),
+            };
+            if (terms.client_no_context_takeover) ex.ws_inflater.?.reset();
             message.clearRetainingCapacity();
+            break :blk &ex.ws_inflated;
+        } else message;
+        if (opcode == .text and !std.unicode.utf8ValidateSlice(whole.items)) return wsFail(ex, 1007, "Text is not valid UTF-8");
+        if (ex.ws_close_sent) {
+            whole.clearRetainingCapacity();
             continue;
         }
         if (!waitCredit(ex, &ex.closed)) return;
         const kind: WsKind = if (opcode == .text) .text else .binary;
-        if (message.items.len == 0) {
+        if (whole.items.len == 0) {
             pushWsInbound(ex, kind, null, 0);
             continue;
         }
-        const owned = message.toOwnedSlice(dart_bytes) catch return wsFail(ex, 1011, "Out of memory");
+        const owned = whole.toOwnedSlice(dart_bytes) catch return wsFail(ex, 1011, "Out of memory");
         pushWsInbound(ex, kind, owned.ptr, owned.len);
     }
 }
@@ -2383,6 +2535,13 @@ fn pushWsInboundCopy(ex: *Exchange, kind: WsKind, payload: []const u8) void {
 /// connection ends. Short of that, it ends once the queue is empty, and
 /// the next frame starts another.
 fn wsWriter(w: *std.Io.Writer, ex: *Exchange) void {
+    const gpa = std.heap.c_allocator;
+    const terms = ex.ws_deflate;
+    var deflater: ?Deflater = if (terms.enabled) .{ .strm = undefined } else null;
+    if (deflater) |*d| d.init(terms) catch return writeFailed(ex);
+    defer if (deflater) |*d| d.deinit();
+    var compressed: std.ArrayListUnmanaged(u8) = .empty;
+    defer compressed.deinit(gpa);
     while (true) {
         while (ex.out.pop()) |node| {
             const chunk: *Chunk = @fieldParentPtr("node", node);
@@ -2390,7 +2549,14 @@ fn wsWriter(w: *std.Io.Writer, ex: *Exchange) void {
             defer if (chunk.ptr) |p| dart_bytes.free(p[0..chunk.len]);
             const payload: []const u8 = if (chunk.ptr) |p| p[0..chunk.len] else "";
             const opcode: WsOpcode = @fromBackingInt(@intCast(@as(u4, @truncate(chunk.kind))));
-            writeFrame(w, opcode, payload) catch return writeFailed(ex);
+            // A data message at or over the threshold goes out compressed.
+            // An empty one never does: deflate makes it longer.
+            const compress = deflater != null and !opcode.isControl() and payload.len > 0 and payload.len >= terms.threshold;
+            if (compress) {
+                deflater.?.compress(gpa, payload, &compressed) catch return writeFailed(ex);
+                if (terms.server_no_context_takeover) deflater.?.reset();
+            }
+            writeFrame(w, opcode, if (compress) compressed.items else payload, compress) catch return writeFailed(ex);
             if (opcode != .close) continue;
             w.flush() catch return writeFailed(ex);
             ex.out_written.set();
@@ -3770,13 +3936,26 @@ export fn relic_hijack(v: *ExchangeView) void {
 /// relic_alloc, ownership of which passes to native, and makes the connection a WebSocket. The peer's messages come
 /// through relic_ws_read and frames go out through relic_ws_send. A
 /// message over `max_message` bytes closes the connection with 1009.
-export fn relic_ws_upgrade(v: *ExchangeView, head: [*]u8, head_len: u32, max_message: u32) void {
+///
+/// `deflate` carries the permessage-deflate terms: bit 0 on, bit 1
+/// server_no_context_takeover, bit 2 client_no_context_takeover. The
+/// window bits, level and threshold follow.
+export fn relic_ws_upgrade(v: *ExchangeView, head: [*]u8, head_len: u32, max_message: u32, deflate: u8, server_window_bits: u8, client_window_bits: u8, level: u8, threshold: u32) void {
     const ex: *Exchange = @fieldParentPtr("view", v);
     ex.resp_head = head;
     ex.resp_head_cap = head_len;
     ex.resp_head_len = head_len;
     ex.upgraded = true;
     ex.ws_max_message = max_message;
+    ex.ws_deflate = .{
+        .enabled = deflate & 1 != 0,
+        .server_no_context_takeover = deflate & 2 != 0,
+        .client_no_context_takeover = deflate & 4 != 0,
+        .server_window_bits = server_window_bits,
+        .client_window_bits = client_window_bits,
+        .level = level,
+        .threshold = threshold,
+    };
     const call = DartCall.begin(ex.reactor);
     defer call.end();
     ex.done.set();
@@ -4496,7 +4675,8 @@ const test_switching_head = "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websoc
 fn testUpgrade(v: *ExchangeView) void {
     const head = relic_alloc(test_switching_head.len).?;
     @memcpy(head[0..test_switching_head.len], test_switching_head);
-    relic_ws_upgrade(v, head, test_switching_head.len, 1 << 16);
+    // No permessage-deflate.
+    relic_ws_upgrade(v, head, test_switching_head.len, 1 << 16, 0, 15, 15, 0, 0);
 }
 
 /// Ticks until the client has read `buf.len` bytes, or gives up, and
@@ -5584,7 +5764,7 @@ test "fuzz: a seeded mutation sweep over the request corpus" {
 
 test "ws: a frame head is read as a server reads a client's" {
     var in: std.Io.Reader = .fixed(&.{ 0x81, 0x83, 1, 2, 3, 4, 'a', 'b', 'c' });
-    const head = (try readFrameHead(&in, false, 1 << 20)).head;
+    const head = (try readFrameHead(&in, false, 1 << 20, false)).head;
     try std.testing.expect(head.fin);
     try std.testing.expectEqual(WsOpcode.text, head.opcode);
     try std.testing.expectEqual(@as(u64, 3), head.len);
@@ -5593,15 +5773,15 @@ test "ws: a frame head is read as a server reads a client's" {
     try std.testing.expectEqual(@as(usize, 3), in.bufferedLen());
 
     var two: std.Io.Reader = .fixed(&.{ 0x82, 0xfe, 0x01, 0x00, 0, 0, 0, 0 });
-    try std.testing.expectEqual(@as(u64, 256), (try readFrameHead(&two, false, 1 << 20)).head.len);
+    try std.testing.expectEqual(@as(u64, 256), (try readFrameHead(&two, false, 1 << 20, false)).head.len);
     var eight: std.Io.Reader = .fixed(&.{ 0x82, 0xff, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0 });
-    try std.testing.expectEqual(@as(u64, 1 << 16), (try readFrameHead(&eight, false, 1 << 20)).head.len);
+    try std.testing.expectEqual(@as(u64, 1 << 16), (try readFrameHead(&eight, false, 1 << 20, false)).head.len);
 
     // What may continue a message, and what may interrupt one.
     var cont: std.Io.Reader = .fixed(&.{ 0x80, 0x80, 0, 0, 0, 0 });
-    try std.testing.expectEqual(WsOpcode.continuation, (try readFrameHead(&cont, true, 1 << 20)).head.opcode);
+    try std.testing.expectEqual(WsOpcode.continuation, (try readFrameHead(&cont, true, 1 << 20, false)).head.opcode);
     var ping: std.Io.Reader = .fixed(&.{ 0x89, 0x80, 0, 0, 0, 0 });
-    try std.testing.expectEqual(WsOpcode.ping, (try readFrameHead(&ping, true, 1 << 20)).head.opcode);
+    try std.testing.expectEqual(WsOpcode.ping, (try readFrameHead(&ping, true, 1 << 20, false)).head.opcode);
 }
 
 test "ws: a frame the peer may not send is refused with its close code" {
@@ -5619,7 +5799,7 @@ test "ws: a frame the peer may not send is refused with its close code" {
     };
     for (cases) |case| {
         var in: std.Io.Reader = .fixed(case.bytes);
-        const result = try readFrameHead(&in, case.in_message, case.max);
+        const result = try readFrameHead(&in, case.in_message, case.max, false);
         try std.testing.expectEqual(case.code, result.violation.code);
     }
 }
@@ -5641,7 +5821,7 @@ test "ws: a server frame reads back through the client parser" {
         const buf = try std.testing.allocator.alloc(u8, size + 10);
         defer std.testing.allocator.free(buf);
         var out: std.Io.Writer = .fixed(buf);
-        try writeFrame(&out, .binary, payload);
+        try writeFrame(&out, .binary, payload, false);
         const written = out.buffered();
         const head_len = written.len - size;
         try std.testing.expectEqual(@as(usize, if (size < 126) 2 else if (size <= 0xffff) 4 else 10), head_len);
@@ -5655,11 +5835,64 @@ test "ws: a server frame reads back through the client parser" {
         @memset(masked[head_len .. head_len + 4], 0);
         @memcpy(masked[head_len + 4 ..], written[head_len..]);
         var in: std.Io.Reader = .fixed(masked);
-        const head = (try readFrameHead(&in, false, 1 << 20)).head;
+        const head = (try readFrameHead(&in, false, 1 << 20, false)).head;
         try std.testing.expectEqual(WsOpcode.binary, head.opcode);
         try std.testing.expectEqual(@as(u64, size), head.len);
         try std.testing.expectEqual(size, in.bufferedLen());
     }
+}
+
+test "ws: RSV1 is for the first data frame of a compressed message" {
+    var first: std.Io.Reader = .fixed(&.{ 0xc1, 0x80, 0, 0, 0, 0 });
+    try std.testing.expect((try readFrameHead(&first, false, 1 << 20, true)).head.rsv1);
+    var plain: std.Io.Reader = .fixed(&.{ 0x81, 0x80, 0, 0, 0, 0 });
+    try std.testing.expect(!(try readFrameHead(&plain, false, 1 << 20, true)).head.rsv1);
+
+    const refused = [_][]const u8{
+        &.{ 0xc1, 0x80, 0, 0, 0, 0 }, // not agreed
+        &.{ 0x40, 0x80, 0, 0, 0, 0 }, // on a continuation
+        &.{ 0xc9, 0x80, 0, 0, 0, 0 }, // on a ping
+    };
+    for (refused, 0..) |bytes, i| {
+        var in: std.Io.Reader = .fixed(bytes);
+        const result = try readFrameHead(&in, i == 1, 1 << 20, i != 0);
+        try std.testing.expectEqual(@as(u16, 1002), result.violation.code);
+    }
+}
+
+test "ws: a message deflates, loses its tail, and inflates back" {
+    const gpa = std.testing.allocator;
+    const terms: WsDeflate = .{ .enabled = true, .server_window_bits = 12, .client_window_bits = 12 };
+    var deflater: Deflater = undefined;
+    try deflater.init(terms);
+    defer deflater.deinit();
+    var inflater: Inflater = undefined;
+    try inflater.init(terms);
+    defer inflater.deinit();
+    var packed_: std.ArrayListUnmanaged(u8) = .empty;
+    defer packed_.deinit(gpa);
+    var back: std.ArrayListUnmanaged(u8) = .empty;
+    defer back.deinit(gpa);
+
+    const text = "tick tock tick tock tick tock tick tock tick tock tick tock";
+    // Twice over, so the second message leans on the window of the first.
+    for (0..2) |_| {
+        try deflater.compress(gpa, text, &packed_);
+        try std.testing.expect(packed_.items.len < text.len);
+        try std.testing.expect(!std.mem.endsWith(u8, packed_.items, &deflate_tail));
+        try packed_.appendSlice(gpa, &deflate_tail);
+        try inflater.decompress(gpa, packed_.items, &back, 1 << 20);
+        try std.testing.expectEqualStrings(text, back.items);
+    }
+
+    // The cap is on the inflated size.
+    try deflater.compress(gpa, text, &packed_);
+    try packed_.appendSlice(gpa, &deflate_tail);
+    try std.testing.expectError(error.TooBig, inflater.decompress(gpa, packed_.items, &back, 10));
+
+    // Bytes that are no deflate stream.
+    inflater.reset();
+    try std.testing.expectError(error.Corrupt, inflater.decompress(gpa, &.{ 0xff, 0xff, 0xff, 0xff, 0, 0, 0xff, 0xff }, &back, 1 << 20));
 }
 
 test "ws: the close codes a peer may send" {

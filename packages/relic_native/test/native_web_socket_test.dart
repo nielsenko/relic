@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:io' as io show WebSocket;
 import 'dart:typed_data';
 
 import 'package:relic_core/adapter.dart';
@@ -12,7 +13,7 @@ import 'package:web_socket/web_socket.dart';
 import 'native_test_helpers.dart';
 
 /// A frame off the wire from the server, which never masks.
-typedef _Frame = ({int opcode, bool fin, Uint8List payload});
+typedef _Frame = ({int opcode, bool fin, bool rsv1, Uint8List payload});
 
 /// How long the native side waits for the peer's close frame after
 /// sending its own.
@@ -24,10 +25,11 @@ void main() {
 
   Future<void> serve({
     int maxWebSocketMessage = FramedWebSocket.defaultMaxMessageSize,
+    WebSocketCompression? compression,
   }) async {
     upgraded = Completer<RelicWebSocket>();
     server = await serveNative(
-      (_) => WebSocketUpgrade(upgraded.complete),
+      (_) => WebSocketUpgrade(upgraded.complete, compression: compression),
       options: NativeOptions(maxWebSocketMessage: maxWebSocketMessage),
     );
   }
@@ -379,6 +381,179 @@ void main() {
     expect(await socket.events.first, TextDataReceived('tick'));
     client.destroy();
   });
+
+  group('Given permessage-deflate on the upgrade', () {
+    test('when a dart:io client offers it, '
+        'then messages both ways come through its own compressor', () async {
+      await serve(compression: const WebSocketCompression(threshold: 0));
+      final client = await io.WebSocket.connect(
+        'ws://localhost:${server.port}',
+      );
+      final socket = await upgraded.future;
+
+      final big = Uint8List.fromList(
+        List.generate(100000, (i) => (i * 7) & 0xff),
+      );
+      client.add('tick');
+      client.add(big);
+      final events = StreamIterator(socket.events);
+      expect(await events.moveNext(), isTrue);
+      expect(events.current, TextDataReceived('tick'));
+      expect(await events.moveNext(), isTrue);
+      expect(events.current, BinaryDataReceived(big));
+
+      socket.sendText('tock');
+      socket.sendBytes(big);
+      final back = StreamIterator(client);
+      expect(await back.moveNext(), isTrue);
+      expect(back.current, 'tock');
+      expect(await back.moveNext(), isTrue);
+      expect(back.current, big);
+      await client.close();
+    });
+
+    test(
+      'when the client sends a compressed message after the connection '
+      'sat idle, '
+      'then the handler gets it inflated in the context of the first',
+      () async {
+        await serve(compression: const WebSocketCompression(threshold: 0));
+        final client = await io.WebSocket.connect(
+          'ws://localhost:${server.port}',
+        );
+        final socket = await upgraded.future;
+        final events = StreamIterator(socket.events);
+        final text = 'the same words again ' * 100;
+
+        client.add(text);
+        expect(await events.moveNext(), isTrue);
+        expect(events.current, TextDataReceived(text));
+        // Long enough for the connection to give up its task. The client's
+        // compressor keeps its window, so the next message refers to this one.
+        await Future<void>.delayed(const Duration(seconds: 3));
+        client.add(text);
+
+        expect(await events.moveNext(), isTrue);
+        expect(events.current, TextDataReceived(text));
+        await client.close();
+      },
+    );
+
+    test('when the client never offered it, '
+        'then the handshake leaves it out and frames go as is', () async {
+      await serve(compression: WebSocketCompression.defaults);
+      final client = await _Client.connect(server.port);
+      final socket = await upgraded.future;
+      expect(client.head, isNot(contains('Sec-WebSocket-Extensions')));
+
+      socket.sendText('x' * 1000);
+      final frame = (await client.next())!;
+      expect(frame.rsv1, isFalse);
+      expect(frame.payload.length, 1000);
+      client.destroy();
+    });
+
+    test('when the server sends a message under the threshold, '
+        'then it goes as is, and one over it compressed with RSV1', () async {
+      await serve(compression: const WebSocketCompression(threshold: 100));
+      final client = await _Client.connect(
+        server.port,
+        extensions: 'permessage-deflate; client_max_window_bits',
+      );
+      final socket = await upgraded.future;
+      expect(
+        client.head,
+        contains('Sec-WebSocket-Extensions: permessage-deflate\r\n'),
+      );
+
+      socket.sendText('short');
+      final short = (await client.next())!;
+      expect(short.rsv1, isFalse);
+      expect(utf8.decode(short.payload), 'short');
+
+      socket.sendText('x' * 1000);
+      final long = (await client.next())!;
+      expect(long.rsv1, isTrue);
+      expect(long.payload.length, lessThan(100));
+      client.destroy();
+    });
+
+    test('when the client sends a compressed message, '
+        'then the handler gets it inflated', () async {
+      await serve(compression: WebSocketCompression.defaults);
+      final client = await _Client.connect(
+        server.port,
+        extensions: 'permessage-deflate',
+      );
+      final socket = await upgraded.future;
+
+      // A finished raw deflate stream, which ends in a final block instead
+      // of the sync-flush tail. The server takes either.
+      final packed = ZLibEncoder(raw: true).convert(utf8.encode('y' * 5000));
+      final events = StreamIterator(socket.events);
+      for (var i = 0; i < 2; i++) {
+        client.send(1, packed, rsv1: true);
+        expect(await events.moveNext(), isTrue);
+        expect(events.current, TextDataReceived('y' * 5000));
+      }
+      client.destroy();
+    });
+
+    test('when the client sends bytes that are no deflate stream, '
+        'then the connection closes with 1007', () async {
+      await serve(compression: WebSocketCompression.defaults);
+      final client = await _Client.connect(
+        server.port,
+        extensions: 'permessage-deflate',
+      );
+      final socket = await upgraded.future;
+
+      client.send(2, [0xff, 0xff, 0xff, 0xff], rsv1: true);
+      final close = (await client.next())!;
+      expect(close.opcode, 8);
+      expect((close.payload[0] << 8) | close.payload[1], 1007);
+      await expectLater(socket.events, emitsError(isA<WebSocketException>()));
+      client.destroy();
+    });
+
+    test('when the client sets RSV1 on a continuation frame, '
+        'then the connection closes with 1002', () async {
+      await serve(compression: WebSocketCompression.defaults);
+      final client = await _Client.connect(
+        server.port,
+        extensions: 'permessage-deflate',
+      );
+      await upgraded.future;
+
+      client.send(1, [0], fin: false, rsv1: true);
+      client.send(0, [0], rsv1: true);
+      final close = (await client.next())!;
+      expect(close.opcode, 8);
+      expect((close.payload[0] << 8) | close.payload[1], 1002);
+      client.destroy();
+    });
+
+    test('when a compressed message inflates past the limit, '
+        'then the connection closes with 1009', () async {
+      await serve(
+        compression: WebSocketCompression.defaults,
+        maxWebSocketMessage: 1000,
+      );
+      final client = await _Client.connect(
+        server.port,
+        extensions: 'permessage-deflate',
+      );
+      await upgraded.future;
+
+      final packed = ZLibEncoder(raw: true).convert(Uint8List(100000));
+      expect(packed.length, lessThan(1000));
+      client.send(2, packed, rsv1: true);
+      final close = (await client.next())!;
+      expect(close.opcode, 8);
+      expect((close.payload[0] << 8) | close.payload[1], 1009);
+      client.destroy();
+    });
+  });
 }
 
 /// A client on a raw socket, past the opening handshake, that sends
@@ -388,15 +563,19 @@ final class _Client {
   final StreamIterator<Uint8List> _chunks;
   Uint8List _buffer = Uint8List(0);
 
+  /// The 101 response head.
+  late final String head;
+
   _Client._(this._socket) : _chunks = StreamIterator(_socket);
 
   /// Upgrades a fresh connection, after one plain request on it when
-  /// [reused] is set. The upgrade request carries [chunkedBody] when there
-  /// is one.
+  /// [reused] is set, offering [extensions] when there are any. The
+  /// upgrade request carries [chunkedBody] when there is one.
   static Future<_Client> connect(
     int port, {
     bool reused = false,
     String? chunkedBody,
+    String? extensions,
   }) async {
     final socket = await Socket.connect(InternetAddress.loopbackIPv4, port);
     final client = _Client._(socket);
@@ -406,6 +585,9 @@ final class _Client {
       expect(await client._head(), startsWith('HTTP/1.1 200 '));
     }
     socket.write(webSocketUpgradeFields);
+    if (extensions != null) {
+      socket.write('Sec-WebSocket-Extensions: $extensions\r\n');
+    }
     socket.write(
       chunkedBody == null
           ? '\r\n'
@@ -414,8 +596,8 @@ final class _Client {
                 '0\r\n\r\n',
     );
     await socket.flush();
-    final head = await client._head();
-    expect(head, startsWith('HTTP/1.1 101 '));
+    client.head = await client._head();
+    expect(client.head, startsWith('HTTP/1.1 101 '));
     return client;
   }
 
@@ -471,23 +653,27 @@ final class _Client {
     final frame = (
       opcode: b[0] & 0x0f,
       fin: b[0] & 0x80 != 0,
+      rsv1: b[0] & 0x40 != 0,
       payload: Uint8List.sublistView(b, offset, offset + length),
     );
     _buffer = b.sublist(offset + length);
     return frame;
   }
 
-  /// Sends a frame, masked as a client's must be unless [masked] is off.
+  /// Sends a frame, masked as a client's must be unless [masked] is off,
+  /// with RSV1 set when [rsv1] is.
   void send(
     int opcode,
     List<int> payload, {
     bool fin = true,
     bool masked = true,
+    bool rsv1 = false,
   }) {
     const mask = [0x37, 0xfa, 0x21, 0x3d];
     final length = payload.length;
     final maskBit = masked ? 0x80 : 0;
-    final frame = BytesBuilder(copy: false)..addByte((fin ? 0x80 : 0) | opcode);
+    final frame = BytesBuilder(copy: false)
+      ..addByte((fin ? 0x80 : 0) | (rsv1 ? 0x40 : 0) | opcode);
     if (length < 126) {
       frame.addByte(maskBit | length);
     } else if (length <= 0xffff) {

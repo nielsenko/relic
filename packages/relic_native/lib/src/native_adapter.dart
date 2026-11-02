@@ -375,8 +375,11 @@ final class NativeAdapter implements Adapter {
   }
 
   @override
-  AdapterCapabilities get capabilities =>
-      const AdapterCapabilities(hijack: true, webSocket: true);
+  AdapterCapabilities get capabilities => const AdapterCapabilities(
+    hijack: true,
+    webSocket: true,
+    webSocketDeflate: true,
+  );
 
   @override
   List<Listener> get listeners => [
@@ -1265,13 +1268,13 @@ final class NativeExchange extends LinkedListEntry<NativeExchange>
   }
 
   /// Writes the 101 and leaves the connection with its task, which frames
-  /// it from then on.
+  /// it from then on, compressing on the [deflate] terms when there are any.
   @override
   RelicWebSocket upgradeWebSocket(
     String acceptKey, {
     WebSocketDeflate? deflate,
   }) {
-    final head = webSocketHandshakeResponse(acceptKey);
+    final head = webSocketHandshakeResponse(acceptKey, deflate: deflate);
     final view = _takeView(_Stage.webSocket);
     _expectEvents();
     native.wsUpgrade(
@@ -1279,6 +1282,15 @@ final class NativeExchange extends LinkedListEntry<NativeExchange>
       _nativeCopy(head),
       head.length,
       _adapter._maxWebSocketMessage,
+      deflate == null
+          ? 0
+          : 1 |
+                (deflate.serverNoContextTakeover ? 2 : 0) |
+                (deflate.clientNoContextTakeover ? 4 : 0),
+      deflate?.serverMaxWindowBits ?? 0,
+      deflate?.clientMaxWindowBits ?? 0,
+      deflate?.level ?? 0,
+      deflate?.threshold ?? 0,
     );
     _adapter._scheduleDrain();
     _adapter._tookOver(this);

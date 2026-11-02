@@ -39,6 +39,21 @@ pub fn build(b: *std.Build) void {
     dart_dl.addIncludePath(b.path("src/dart-dl"));
     const dart_dl_module = dart_dl.createModule();
 
+    // zlib, built from source for permessage-deflate on WebSockets, and
+    // its header translated the same way.
+    const zlib = b.dependency("zlib", .{});
+    const zlib_h = b.addTranslateC(.{
+        .root_source_file = zlib.path("zlib.h"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const zlib_module = zlib_h.createModule();
+    const zlib_sources = [_][]const u8{
+        "adler32.c", "crc32.c",    "deflate.c", "inffast.c",
+        "inflate.c", "inftrees.c", "trees.c",   "zutil.c",
+    };
+    const zlib_flags = [_][]const u8{ "-DHAVE_UNISTD_H", "-DHAVE_STDARG_H", "-DZ_HAVE_STDARG_H" };
+
     const module = b.createModule(.{
         .root_source_file = b.path("src/relic_native.zig"),
         .target = target,
@@ -51,6 +66,9 @@ pub fn build(b: *std.Build) void {
     module.addImport("dart_dl", dart_dl_module);
     module.addIncludePath(b.path("src/dart-dl"));
     module.addCSourceFile(.{ .file = b.path("src/dart-dl/dart_api_dl.c"), .flags = &.{} });
+    module.addImport("zlib", zlib_module);
+    module.addIncludePath(zlib.path(""));
+    module.addCSourceFiles(.{ .root = zlib.path(""), .files = &zlib_sources, .flags = &zlib_flags });
 
     const lib = b.addLibrary(.{
         .name = "relic_native",
@@ -79,6 +97,9 @@ pub fn build(b: *std.Build) void {
     test_module.addImport("dart_dl", dart_dl_module);
     test_module.addIncludePath(b.path("src/dart-dl"));
     test_module.addCSourceFile(.{ .file = b.path("src/dart-dl/dart_api_dl.c"), .flags = &.{} });
+    test_module.addImport("zlib", zlib_module);
+    test_module.addIncludePath(zlib.path(""));
+    test_module.addCSourceFiles(.{ .root = zlib.path(""), .files = &zlib_sources, .flags = &zlib_flags });
     // The TLS material in test/certs, which @embedFile cannot reach from
     // src.
     const test_certs = b.addWriteFiles();

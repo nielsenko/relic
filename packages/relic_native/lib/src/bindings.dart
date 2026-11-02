@@ -339,15 +339,33 @@ external void hijack(Pointer<ExchangeView> view);
 
 /// Answers with the 101 [head] and makes the connection a WebSocket. A
 /// message over [maxMessage] bytes closes it with 1009.
-@Native<Void Function(Pointer<ExchangeView>, Pointer<Uint8>, Uint32, Uint32)>(
-  symbol: 'relic_ws_upgrade',
-  isLeaf: true,
-)
+///
+/// [deflate] carries the permessage-deflate terms as bits: 1 for on, 2 for
+/// server_no_context_takeover, 4 for client_no_context_takeover. The
+/// window bits, level and threshold follow, and go unread when it is 0.
+@Native<
+  Void Function(
+    Pointer<ExchangeView>,
+    Pointer<Uint8>,
+    Uint32,
+    Uint32,
+    Uint8,
+    Uint8,
+    Uint8,
+    Uint8,
+    Uint32,
+  )
+>(symbol: 'relic_ws_upgrade', isLeaf: true)
 external void wsUpgrade(
   Pointer<ExchangeView> view,
   Pointer<Uint8> head,
   int headLen,
   int maxMessage,
+  int deflate,
+  int serverWindowBits,
+  int clientWindowBits,
+  int level,
+  int threshold,
 );
 
 /// Queues a frame for the peer, with [data] as its payload. False when
