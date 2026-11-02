@@ -7,6 +7,10 @@ void main() {
   adapterConformance(
     'NativeAdapter',
     bind: conformanceBind('conformance'),
-    capabilities: const AdapterCapabilities(hijack: true, webSocket: true),
+    capabilities: const AdapterCapabilities(
+      hijack: true,
+      webSocket: true,
+      webSocketDeflate: true,
+    ),
   );
 }

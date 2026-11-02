@@ -38,6 +38,7 @@ import 'src/conformance/serve_tests.dart';
 import 'src/conformance/server_tests.dart';
 import 'src/conformance/shutdown_tests.dart';
 import 'src/conformance/streaming_tests.dart';
+import 'src/conformance/web_socket_deflate_tests.dart';
 import 'src/conformance/web_socket_origin_tests.dart';
 import 'src/conformance/web_socket_tests.dart';
 
@@ -97,5 +98,6 @@ void adapterConformance(
     hijackTests(conformance);
     webSocketTests(conformance);
     webSocketOriginTests(conformance);
+    webSocketDeflateTests(conformance);
   });
 }

@@ -97,6 +97,11 @@ final class AdapterConformance {
   String? get skipWebSocket =>
       supportsWebSocket ? null : '$name has no WebSocket support';
 
+  /// Why permessage-deflate tests are skipped, or null when they run.
+  String? get skipWebSocketDeflate => capabilities.webSocketDeflate
+      ? null
+      : '$name has no WebSocket compressor';
+
   /// Why hijack tests are skipped, or null when they run.
   String? get skipHijack =>
       capabilities.hijack ? null : '$name has no hijack support';

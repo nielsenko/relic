@@ -249,7 +249,8 @@ final class _IOExchange with ExchangeEndState implements AdapterExchange {
 
   /// dart:io computes the accept key itself and negotiates the extension
   /// again from the request, so [acceptKey] goes unused and [deflate] only
-  /// bounds what it may agree to.
+  /// bounds what it may agree to. It takes no context takeover only when
+  /// the client offered it.
   @override
   Future<RelicWebSocket> upgradeWebSocket(
     String acceptKey, {
