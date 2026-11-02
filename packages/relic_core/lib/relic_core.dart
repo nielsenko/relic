@@ -56,3 +56,4 @@ export 'src/router/router.dart';
 export 'src/router/router_handler_extension.dart';
 export 'src/util/http_date.dart' show httpDate;
 export 'src/util/util.dart' hide statusMayHaveBody;
+export 'src/web_socket/web_socket_deflate.dart';

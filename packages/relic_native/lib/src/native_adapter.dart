@@ -1267,7 +1267,10 @@ final class NativeExchange extends LinkedListEntry<NativeExchange>
   /// Writes the 101 and leaves the connection with its task, which frames
   /// it from then on.
   @override
-  RelicWebSocket upgradeWebSocket(String acceptKey) {
+  RelicWebSocket upgradeWebSocket(
+    String acceptKey, {
+    WebSocketDeflate? deflate,
+  }) {
     final head = webSocketHandshakeResponse(acceptKey);
     final view = _takeView(_Stage.webSocket);
     _expectEvents();

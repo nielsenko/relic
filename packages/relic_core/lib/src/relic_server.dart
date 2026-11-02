@@ -19,6 +19,7 @@ import 'middleware/routing_middleware.dart';
 import 'router/method.dart';
 import 'util/util.dart';
 import 'web_socket/framed_web_socket.dart';
+import 'web_socket/web_socket_deflate.dart';
 import 'web_socket/web_socket_handshake.dart';
 
 sealed class RelicServer {
@@ -262,7 +263,11 @@ final class _RelicServer implements RelicServer {
         }
         final capabilities = _adapter!.capabilities;
         if (capabilities.webSocket) {
-          final socket = exchange.upgradeWebSocket(acceptKey);
+          final compression = upgrade.compression;
+          final deflate = capabilities.webSocketDeflate && compression != null
+              ? negotiateWebSocketDeflate(request, compression)
+              : null;
+          final socket = exchange.upgradeWebSocket(acceptKey, deflate: deflate);
           if (socket is Future<RelicWebSocket>) {
             return socket.then((socket) => _handOver(socket, upgrade));
           }

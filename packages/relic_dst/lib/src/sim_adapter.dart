@@ -852,8 +852,10 @@ final class _SimExchange implements AdapterExchange {
   }
 
   @override
-  FutureOr<RelicWebSocket> upgradeWebSocket(String acceptKey) =>
-      throw UnsupportedError('SimAdapter frames WebSockets over hijack');
+  FutureOr<RelicWebSocket> upgradeWebSocket(
+    String acceptKey, {
+    WebSocketDeflate? deflate,
+  }) => throw UnsupportedError('SimAdapter frames WebSockets over hijack');
 
   @override
   void abort() {

@@ -9,6 +9,7 @@ import '../headers/exception/header_exception.dart';
 import '../headers/standard_headers_extensions.dart';
 import '../router/method.dart';
 import '../util/http_date.dart';
+import 'web_socket_deflate.dart';
 
 /// The string RFC 6455 1.3 derives the accept key with.
 const _guid = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
@@ -54,11 +55,16 @@ String? webSocketAcceptKey(Request request) {
 }
 
 /// The 101 response that completes the handshake, as bytes for the wire.
-Uint8List webSocketHandshakeResponse(String acceptKey) => utf8.encode(
+/// With [deflate] it accepts the permessage-deflate offer on those terms.
+Uint8List webSocketHandshakeResponse(
+  String acceptKey, {
+  WebSocketDeflate? deflate,
+}) => utf8.encode(
   'HTTP/1.1 101 Switching Protocols\r\n'
   'Upgrade: websocket\r\n'
   'Connection: Upgrade\r\n'
   'Sec-WebSocket-Accept: $acceptKey\r\n'
+  '${deflate == null ? '' : 'Sec-WebSocket-Extensions: ${deflate.headerValue}\r\n'}'
   'Date: ${httpDate()}\r\n'
   '\r\n',
 );

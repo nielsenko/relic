@@ -99,5 +99,16 @@ final class WebSocketUpgrade extends Result {
   /// other sites, and that does not rely on cookies to authenticate.
   final bool allowAnyOrigin;
 
-  WebSocketUpgrade(this.callback, {this.allowAnyOrigin = false});
+  /// How to compress messages with permessage-deflate (RFC 7692) when the
+  /// client offers it, or null to send every message as is.
+  ///
+  /// An adapter without a compressor, or the core framing over a hijack,
+  /// leaves the extension out of the handshake whatever this says.
+  final WebSocketCompression? compression;
+
+  WebSocketUpgrade(
+    this.callback, {
+    this.allowAnyOrigin = false,
+    this.compression,
+  });
 }

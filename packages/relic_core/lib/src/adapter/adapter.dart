@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:stream_channel/stream_channel.dart';
 
 import '../context/result.dart';
+import '../web_socket/web_socket_deflate.dart';
 import 'relic_web_socket.dart';
 
 /// A callback function that handles a hijacked connection.
@@ -78,7 +79,16 @@ final class AdapterCapabilities {
   /// Otherwise the core frames over [hijack].
   final bool webSocket;
 
-  const AdapterCapabilities({this.hijack = false, this.webSocket = false});
+  /// Whether the adapter's framer compresses with permessage-deflate (RFC
+  /// 7692). The core then negotiates the extension when an upgrade asks
+  /// for it, and hands the terms to [AdapterExchange.upgradeWebSocket].
+  final bool webSocketDeflate;
+
+  const AdapterCapabilities({
+    this.hijack = false,
+    this.webSocket = false,
+    this.webSocketDeflate = false,
+  });
 }
 
 /// How an exchange finished.
@@ -164,7 +174,10 @@ abstract interface class AdapterExchange {
   /// it computed for the 101.
   ///
   /// Throws [UnsupportedError] unless [AdapterCapabilities.webSocket].
-  FutureOr<RelicWebSocket> upgradeWebSocket(String acceptKey);
+  FutureOr<RelicWebSocket> upgradeWebSocket(
+    String acceptKey, {
+    WebSocketDeflate? deflate,
+  });
 
   /// Drops the exchange without a response.
   ///

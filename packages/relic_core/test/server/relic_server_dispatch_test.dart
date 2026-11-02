@@ -119,7 +119,10 @@ final class _FakeExchange implements AdapterExchange {
   final webSocket = _FakeWebSocket();
 
   @override
-  FutureOr<RelicWebSocket> upgradeWebSocket(String acceptKey) {
+  FutureOr<RelicWebSocket> upgradeWebSocket(
+    String acceptKey, {
+    WebSocketDeflate? deflate,
+  }) {
     upgraded = true;
     _finish(ExchangeEnd.upgraded);
     return webSocket;

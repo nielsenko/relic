@@ -56,8 +56,10 @@ final class BenchmarkExchange implements AdapterExchange {
   FutureOr<StreamChannel<Uint8List>> hijack() => throw UnsupportedError('');
 
   @override
-  FutureOr<RelicWebSocket> upgradeWebSocket(String acceptKey) =>
-      throw UnsupportedError('');
+  FutureOr<RelicWebSocket> upgradeWebSocket(
+    String acceptKey, {
+    WebSocketDeflate? deflate,
+  }) => throw UnsupportedError('');
 
   @override
   void abort() {}

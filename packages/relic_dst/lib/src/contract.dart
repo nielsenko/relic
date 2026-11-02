@@ -226,7 +226,10 @@ final class ContractExchange implements AdapterExchange {
   }
 
   @override
-  FutureOr<RelicWebSocket> upgradeWebSocket(String acceptKey) {
+  FutureOr<RelicWebSocket> upgradeWebSocket(
+    String acceptKey, {
+    WebSocketDeflate? deflate,
+  }) {
     _terminalCall('upgradeWebSocket');
     if (!_adapter.capabilities.webSocket) {
       _violate(
@@ -234,7 +237,7 @@ final class ContractExchange implements AdapterExchange {
         'it was called',
       );
     }
-    return inner.upgradeWebSocket(acceptKey);
+    return inner.upgradeWebSocket(acceptKey, deflate: deflate);
   }
 
   @override

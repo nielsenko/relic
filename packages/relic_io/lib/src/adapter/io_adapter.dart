@@ -83,8 +83,11 @@ class IOAdapter implements Adapter {
   io.InternetAddress get address => _server.address;
 
   @override
-  AdapterCapabilities get capabilities =>
-      const AdapterCapabilities(hijack: true, webSocket: true);
+  AdapterCapabilities get capabilities => const AdapterCapabilities(
+    hijack: true,
+    webSocket: true,
+    webSocketDeflate: true,
+  );
 
   @override
   List<Listener> get listeners => [
@@ -244,10 +247,25 @@ final class _IOExchange with ExchangeEndState implements AdapterExchange {
     return StreamChannel<Uint8List>(socket, _SocketSink(socket));
   }
 
-  /// dart:io computes the accept key itself, so [acceptKey] goes unused.
+  /// dart:io computes the accept key itself and negotiates the extension
+  /// again from the request, so [acceptKey] goes unused and [deflate] only
+  /// bounds what it may agree to.
   @override
-  Future<RelicWebSocket> upgradeWebSocket(String acceptKey) async {
-    final webSocket = await IORelicWebSocket.fromHttpRequest(_request);
+  Future<RelicWebSocket> upgradeWebSocket(
+    String acceptKey, {
+    WebSocketDeflate? deflate,
+  }) async {
+    final webSocket = await IORelicWebSocket.fromHttpRequest(
+      _request,
+      compression: deflate == null
+          ? io.CompressionOptions.compressionOff
+          : io.CompressionOptions(
+              clientNoContextTakeover: deflate.clientNoContextTakeover,
+              serverNoContextTakeover: deflate.serverNoContextTakeover,
+              clientMaxWindowBits: deflate.clientMaxWindowBits,
+              serverMaxWindowBits: deflate.serverMaxWindowBits,
+            ),
+    );
     _adapter._trackWebSocket(webSocket);
     _finish(ExchangeEnd.upgraded);
     return webSocket;

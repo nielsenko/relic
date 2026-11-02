@@ -46,8 +46,11 @@ class IORelicWebSocket implements RelicWebSocket {
   }
 
   static Future<IORelicWebSocket> fromHttpRequest(
-    io.HttpRequest request,
-  ) async => IORelicWebSocket._(await io.WebSocketTransformer.upgrade(request));
+    io.HttpRequest request, {
+    io.CompressionOptions compression = io.CompressionOptions.compressionOff,
+  }) async => IORelicWebSocket._(
+    await io.WebSocketTransformer.upgrade(request, compression: compression),
+  );
 
   // Create an `IORelicWebSocket` from an existing `dart:io` `WebSocket`
   // that has been correctly established using either io.WebSocket.connect, or
