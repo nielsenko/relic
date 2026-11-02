@@ -9,6 +9,7 @@ import 'package:stream_channel/stream_channel.dart';
 import 'bind_http_server.dart';
 import 'io_relic_web_socket.dart';
 import 'request.dart';
+import 'request_body.dart';
 import 'response.dart';
 
 /// An [Adapter] implementation for `dart:io` [HttpServer].
@@ -170,10 +171,19 @@ class IOAdapter implements Adapter {
   }
 }
 
+/// How long [_IOExchange.respond] reads the rest of a request body before
+/// it closes the response. nginx's lingering_time.
+const _lingerTotal = Duration(seconds: 30);
+
+/// How long that reading may go without bytes. A periodic check enforces
+/// it, so it can take up to twice this. nginx's lingering_timeout.
+const _lingerIdle = Duration(seconds: 5);
+
 /// One `dart:io` request and its response.
 final class _IOExchange with ExchangeEndState implements AdapterExchange {
   final IOAdapter _adapter;
   final io.HttpRequest _request;
+  final IORequestBody? _requestBody;
 
   /// The [cancelled] future of a caller that asked before the peer went
   /// away.
@@ -184,7 +194,8 @@ final class _IOExchange with ExchangeEndState implements AdapterExchange {
   Body? _body;
   var _bodyRead = false;
 
-  _IOExchange._(this._adapter, this._request) {
+  _IOExchange._(this._adapter, this._request)
+    : _requestBody = IORequestBody.of(_request) {
     // dart:io reports a peer that went away as an error on `done`. That is
     // its only signal, and it fires only once something was written, so
     // `cancelled` is best effort on this adapter.
@@ -203,6 +214,7 @@ final class _IOExchange with ExchangeEndState implements AdapterExchange {
       _request,
       this,
       create,
+      _requestBody,
       onBodyEnd: () => _bodyRead = true,
     );
     _body = request.body;
@@ -213,14 +225,22 @@ final class _IOExchange with ExchangeEndState implements AdapterExchange {
   ///
   /// The core then answers with an error response, or calls [abort] when
   /// that fails too. Either one ends the exchange.
+  ///
+  /// dart:io ends the connection when the response closes on a request body
+  /// not read to its end, and a peer still sending can then lose the
+  /// response. So the rest of the body is read first, within limits.
   @override
   Future<void> respond(Response response) async {
+    final httpResponse = _request.response;
+    _requestBody?.hold();
     await response.writeHttpResponse(
-      _request.response,
+      httpResponse,
       head: _request.method == 'HEAD',
       protocol: httpProtocolOf(_request),
       keepAlive: keepAliveOf(_request),
     );
+    await _requestBody?.discardRest(idle: _lingerIdle, total: _lingerTotal);
+    await httpResponse.close();
     _finish(ExchangeEnd.completed);
   }
 
