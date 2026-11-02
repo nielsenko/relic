@@ -4,15 +4,18 @@ import 'dart:typed_data';
 
 import 'package:relic_core/relic_core.dart';
 
+import 'request_body.dart';
+
 /// Creates a new [Request] from an [io.HttpRequest], on [exchange], with
-/// [create].
+/// [create]. Its body reads [body].
 ///
 /// Throws [FormatException] for a target that does not decode. The core
 /// answers that with 400 before any handler runs.
 Request fromHttpRequest(
   io.HttpRequest request,
   AdapterExchange exchange,
-  RequestFactory create, {
+  RequestFactory create,
+  IORequestBody? body, {
   void Function()? onBodyEnd,
 }) {
   final url = request.requestedUri;
@@ -24,7 +27,7 @@ Request fromHttpRequest(
     url: url,
     target: target,
     headers: headers,
-    body: bodyFromHttpRequest(request, headers, onBodyEnd: onBodyEnd),
+    body: bodyFromHttpRequest(request, headers, body, onBodyEnd: onBodyEnd),
     lazyConnectionInfo: () =>
         connectionInfoFromHttpConnectionInfo(request.connectionInfo),
   );
@@ -58,27 +61,25 @@ Headers headersFromHttpRequest(io.HttpRequest request) {
   return Headers.fromStore(store);
 }
 
-/// The body of [request], typed by [headers].
+/// The body of [request], typed by [headers], read from [body].
 ///
-/// A request that declares no length and is not chunked has none. The
-/// request goes in lazily: a body rejected unread is then never listened to,
-/// and dart:io drains it after the response instead of resetting the client.
-/// [onBodyEnd] runs when a chunked body has been read to its end.
+/// A request without [body] has none. The body opens lazily: one rejected
+/// unread is then never listened to. [onBodyEnd] runs when a chunked body
+/// has been read to its end.
 Body bodyFromHttpRequest(
   io.HttpRequest request,
-  Headers headers, {
+  Headers headers,
+  IORequestBody? body, {
   void Function()? onBodyEnd,
 }) {
+  if (body == null) return Body.empty();
   final length = request.contentLength;
-  if (length < 0 && !request.headers.chunkedTransferEncoding) {
-    return Body.empty();
-  }
   final chunked = length < 0;
   final contentType = headers.tryGet(Headers.contentType);
   return Body(
     open: () => chunked && onBodyEnd != null
-        ? request.transform(_endingWith(onBodyEnd))
-        : request,
+        ? body.stream.transform(_endingWith(onBodyEnd))
+        : body.stream,
     contentLength: chunked ? null : length,
     bodyType: contentType == null
         ? null
