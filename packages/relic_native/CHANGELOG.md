@@ -18,6 +18,10 @@
 - A listening port on Windows refuses every other bind, as in dart:io. Before,
   a socket with SO_REUSEADDR could take it
 - `NativeAdapter.bind` takes `v6Only`, as `IOAdapter.bind` does
+- A request body the handler did not read to its end is read and
+  dropped after the response, for up to 30 s, or 5 s without bytes. The
+  connection then carries the next request, whatever the body's length,
+  or ends in a lingering close
 
 ## 2.0.0-rc.4
 - Works on Windows: the acceptor and the reactors share one zio loop group,
