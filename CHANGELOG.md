@@ -1,5 +1,6 @@
 ## Unreleased
 - fix: `IOAdapter` reads and drops the rest of a request body the handler did not read to its end, after the response and for up to 30 s, or 5 s without bytes. A client still sending, as when `read(maxLength:)` rejects its body, gets the response and not a reset
+- fix: `read(maxLength:)` cancels a body of unknown length at the limit on Windows too, and the adapter reads what is left
 
 ## 2.0.0-rc.5
 - feat: `relic_native` takes client certificates, encrypted and PKCS#1 private keys and `v6Only`, selects http/1.1 through ALPN, and an IPv6 listener takes IPv4 clients. The core packages are unchanged and released in step
