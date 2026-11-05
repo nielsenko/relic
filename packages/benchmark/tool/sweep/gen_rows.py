@@ -31,6 +31,10 @@ what = {
  "relic-io8":("Relic IOAdapter on dart:io, 8 isolates","JIT","ioadapter",8),
  "relic-native8":("Relic on zio, 8 isolates","JIT","zio",8),
  "relic-native8-handler":("Relic on zio, 8 isolates, no router","JIT","zio",8),
+ "relic12-io":("Relic 1.2.0 on dart:io","JIT","other",1),
+ "relic12-io2":("Relic 1.2.0 on dart:io, 2 isolates","JIT","other",2),
+ "relic12-io4":("Relic 1.2.0 on dart:io, 4 isolates","JIT","other",4),
+ "relic12-io8":("Relic 1.2.0 on dart:io, 8 isolates","JIT","other",8),
 }
 rows = {}
 loads = {0.5: 0, 0.75: 1, 0.9: 2, 0.95: 3, 1.0: 4}

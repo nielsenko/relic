@@ -103,6 +103,11 @@ scenario() {
 B=$(ls "$R"/build/cli/*/bundle/bin/load_serve | head -1)
 H=$R/baselines/hyper/target/release/relic_baseline_hyper
 Z=$R/baselines/dusty/zig-out/bin/relic_baseline_dusty
+# Relic 1.2.0 runs from its own package configuration, not the
+# workspace's, which holds the relic of this tree.
+O=$R/baselines/relic_1_2
+(cd "$O" && dart pub get > "$N/relic_1_2_pub.log" 2>&1)
+V=(dart --packages="$O/.dart_tool/package_config.json" "$O/bin/server.dart")
 echo "start $(date)" >> "$N/progress.log"
 # HTTP
 scenario hyper hyper=http://127.0.0.1:8090 -- "$H" 8090 1
@@ -171,5 +176,14 @@ scenario relic-native8-tls relic-native8-tls=native8 --tls
 scenario relic-native8-handler-tls relic-native8-handler-tls=native8-handler --tls
 scenario relic-io8-tls relic-io8-tls=io8 --tls
 scenario shelf8-tls shelf8-tls=shelf8 --tls
+# Relic 1.2.0 on dart:io.
+scenario relic12-io relic12-io=http://127.0.0.1:18121 -- "${V[@]}" 18121 1
+scenario relic12-io2 relic12-io2=http://127.0.0.1:18122 -- "${V[@]}" 18122 2
+scenario relic12-io4 relic12-io4=http://127.0.0.1:18124 -- "${V[@]}" 18124 4
+scenario relic12-io8 relic12-io8=http://127.0.0.1:18128 -- "${V[@]}" 18128 8
+scenario relic12-io-tls relic12-io-tls=https://127.0.0.1:18521 -- "${V[@]}" 18521 1 "$C/localhost_cert.pem" "$C/localhost_key.pem"
+scenario relic12-io2-tls relic12-io2-tls=https://127.0.0.1:18522 -- "${V[@]}" 18522 2 "$C/localhost_cert.pem" "$C/localhost_key.pem"
+scenario relic12-io4-tls relic12-io4-tls=https://127.0.0.1:18524 -- "${V[@]}" 18524 4 "$C/localhost_cert.pem" "$C/localhost_key.pem"
+scenario relic12-io8-tls relic12-io8-tls=https://127.0.0.1:18528 -- "${V[@]}" 18528 8 "$C/localhost_cert.pem" "$C/localhost_key.pem"
 . "$R/tool/sweep/ws.sh"
 echo "done $(date)" >> "$N/progress.log"
