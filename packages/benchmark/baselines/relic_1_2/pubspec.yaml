@@ -1,0 +1,12 @@
+name: relic_baseline_1_2
+description: The http_load.dart routes on Relic 1.2.0 and its dart:io adapter.
+publish_to: none
+
+environment:
+  sdk: ^3.8.0
+
+dependencies:
+  relic: 1.2.0
+
+dev_dependencies:
+  serverpod_lints: ">=3.0.0 <5.0.0"
