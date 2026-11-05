@@ -28,7 +28,7 @@ const browserHeaders = [
   'Accept-Language: en-US,en;q=0.9,da;q=0.8',
   'Cookie: session=0123456789abcdef0123456789abcdef0123456789abcdef; '
       '_ga=GA1.1.1234567890.1700000000; _gid=GA1.1.0987654321.1700000000; '
-      'theme=dark; consent=analytics,marketing; '
+      'theme=dark; consent=analyticsmarketing; '
       'tracker=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
       'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
 ];
