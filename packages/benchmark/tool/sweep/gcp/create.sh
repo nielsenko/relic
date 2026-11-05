@@ -8,9 +8,12 @@
 # platform has no such flags for bare metal; the OS turns SMT off there.
 # C4A has one thread per core already and takes no thread count.
 # A VM also stops after MAX_RUN, 8h by default.
+# PMU=architectural, standard or enhanced exposes hardware counters to the
+# VM, on the series that offer them, C4, C4A and M4 among them.
 # An arm type (c4a-) gets the arm64 image. Metadata attributes for the
 # startup script come from the environment: RELIC_BRANCH, SWEEP_ENV,
-# SWEEP_ONLY, KEEP. RELIC_PATCH names a file to apply to the clone.
+# SWEEP_ONLY, SWEEP_SCRIPT, KEEP. RELIC_PATCH names a file to apply to
+# the clone.
 set -euo pipefail
 NAME=${1:-relic-bench}
 TYPE=${2:-c4d-standard-32}
@@ -27,8 +30,10 @@ case $TYPE in
   c4a-*) FLAGS+=(--provisioning-model=SPOT --instance-termination-action=STOP "--max-run-duration=${MAX_RUN:-8h}") ;;
   *) FLAGS+=(--threads-per-core=1 --provisioning-model=SPOT --instance-termination-action=STOP "--max-run-duration=${MAX_RUN:-8h}") ;;
 esac
+[[ -n ${PMU:-} ]] && FLAGS+=("--performance-monitoring-unit=$PMU")
 META="relic-branch=${RELIC_BRANCH:-chore-benchmark-sweep},sweep-env=${SWEEP_ENV:-QUIET=0 PAUSE=5 OHA_THREADS=8},keep=${KEEP:-0}"
 [[ -n ${SWEEP_ONLY:-} ]] && META="$META,sweep-only=$SWEEP_ONLY"
+[[ -n ${SWEEP_SCRIPT:-} ]] && META="$META,sweep-script=$SWEEP_SCRIPT"
 FILES="startup-script=$S/startup.sh"
 [[ -n ${RELIC_PATCH:-} ]] && FILES="$FILES,relic-patch=$RELIC_PATCH"
 gcloud compute instances create "$NAME" \

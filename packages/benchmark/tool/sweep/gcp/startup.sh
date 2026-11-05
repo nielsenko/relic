@@ -9,6 +9,8 @@
 #   sweep-env     environment for sweep.sh, "QUIET=0 PAUSE=5 OHA_THREADS=8"
 #                 by default
 #   sweep-only    a space-separated list of targets, all by default
+#   sweep-script  the script to run in packages/benchmark, tool/sweep/sweep.sh
+#                 by default
 #   keep          1 leaves the instance running after the sweep
 # Progress is in the serial console and /var/log/relic-sweep.log.
 # Any failure uploads that log to the bucket as failed-<date>-<type>.log
@@ -28,6 +30,7 @@ PATCH=$(md relic-patch "")
 BUCKET=$(md relic-bucket relic-bench-nights)
 ENVS=$(md sweep-env "QUIET=0 PAUSE=5 OHA_THREADS=8")
 ONLY=$(md sweep-only "")
+SCRIPT=$(md sweep-script tool/sweep/sweep.sh)
 KEEP=$(md keep 0)
 NAME=$(curl -sf -H 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/instance/name)
 TYPE=$(curl -sf -H 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/instance/machine-type | sed 's#.*/##')
@@ -68,7 +71,7 @@ esac
 echo "=== toolchains $(date)"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -q
-apt-get install -y -q build-essential pkg-config unzip git curl ca-certificates gnupg psmisc
+apt-get install -y -q build-essential pkg-config unzip git curl ca-certificates gnupg psmisc strace
 apt-get install -y -q linux-tools-common "linux-tools-$(uname -r)" || echo "perf not available for this kernel"
 curl -fsSL https://dl-ssl.google.com/linux/linux_signing_key.pub | gpg --batch --yes --dearmor -o /usr/share/keyrings/dart.gpg
 echo 'deb [signed-by=/usr/share/keyrings/dart.gpg arch=amd64,arm64] https://storage.googleapis.com/download.dartlang.org/linux/debian stable main' > /etc/apt/sources.list.d/dart_stable.list
@@ -77,6 +80,11 @@ curl -sSL "https://github.com/marler8997/anyzig/releases/download/v2026_10_23/an
 curl -sSL -o /usr/local/bin/oha "https://github.com/hatoo/oha/releases/download/v1.16.0/oha-linux-${OHA_ARCH}" && chmod +x /usr/local/bin/oha
 curl -fsSL https://deno.land/install.sh | DENO_INSTALL=/usr/local sh -s v2.9.8
 id bench >/dev/null 2>&1 || useradd -m -s /bin/bash bench
+# tool/sweep/kernel.sh counts the system calls of the servers it starts,
+# with perf as root and with strace attached as bench.
+printf 'bench ALL=(root) NOPASSWD: /usr/bin/perf\n' > /etc/sudoers.d/bench-trace
+chmod 440 /etc/sudoers.d/bench-trace
+sysctl -w kernel.yama.ptrace_scope=0
 
 echo "=== clone and build $(date)"
 if [[ -n $PATCH ]]; then printf '%s\n' "$PATCH" > /tmp/relic.patch; else : > /tmp/relic.patch; fi
@@ -97,7 +105,7 @@ BENCH
 
 echo "=== sweep $(date)"
 OUT=/home/bench/sweep-out
-su - bench -c "export PATH=\$HOME/.cargo/bin:/usr/lib/dart/bin:\$PATH; cd relic/packages/benchmark && env $ENVS ONLY='$ONLY' OUT=$OUT tool/sweep/sweep.sh" || echo "sweep exited $?"
+su - bench -c "export PATH=\$HOME/.cargo/bin:/usr/lib/dart/bin:\$PATH; cd relic/packages/benchmark && env $ENVS ONLY='$ONLY' OUT=$OUT $SCRIPT" || echo "sweep exited $?"
 {
   echo "instance: $NAME $TYPE"
   echo "image: $(. /etc/os-release && echo "$PRETTY_NAME")"
