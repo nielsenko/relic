@@ -349,7 +349,8 @@ const Exchange = struct {
     /// Set by Dart when a handler asks for `cancelled`. The task then
     /// watches the socket for EOF while it waits.
     watch: zio.Event = .init,
-    /// Outbound chunks from Dart, which sets `out_ready` after every push.
+    /// Outbound chunks from Dart. A streamed body and a raw connection
+    /// set `out_ready` after every push. A WebSocket starts a writer.
     out: Fifo = .{},
     out_ready: zio.Event = .init,
     /// Inbound chunks for Dart, which sets `credit` after it takes one.
@@ -375,6 +376,17 @@ const Exchange = struct {
     /// A stop went to the read. Its cancel is still pending when the read
     /// ended on its own first.
     ws_stopped: bool = false,
+    /// Where a WebSocket's frames go, from the 101 on. No writer starts
+    /// without it.
+    ws_writer: ?*std.Io.Writer = null,
+    /// A writer task is writing a WebSocket's frames. It ends once none is
+    /// left.
+    ws_writing: bool = false,
+    /// Holds the writer task, so the end of the connection can end it.
+    ws_writers: zio.Group = .init,
+    /// Listed in the reactor's `ws_wanted`.
+    ws_wanted: bool = false,
+    ws_wanted_node: std.DoublyLinkedList.Node = .{},
 
     fn init(self: *Exchange, reactor: *Reactor, view: ExchangeView) void {
         self.* = .{ .view = view, .reactor = reactor };
@@ -437,6 +449,9 @@ pub const Reactor = struct {
     /// The open connections, for the sweeper to walk.
     conns: std.DoublyLinkedList = .{},
     sweeping: bool = false,
+    /// WebSockets Dart queued frames on that have no writer. Dart's calls
+    /// run outside any task, so the next tick starts one for each.
+    ws_wanted: std.DoublyLinkedList = .{},
     /// The Date stamped on responses, and the loop time at which it is a
     /// second old. A tick refreshes it, so a stamp is a copy.
     date: [http_date_len]u8 = undefined,
@@ -478,6 +493,16 @@ pub const Reactor = struct {
                 continue;
             };
             self.pending = true;
+        }
+    }
+
+    /// Starts a writer for every WebSocket in `ws_wanted`.
+    /// Assumes a tick has bound the executor to this thread.
+    fn drainWsWanted(self: *Reactor) void {
+        while (self.ws_wanted.popFirst()) |node| {
+            const ex: *Exchange = @fieldParentPtr("ws_wanted_node", node);
+            ex.ws_wanted = false;
+            if (startWsWriter(ex)) self.pending = true;
         }
     }
 };
@@ -1599,13 +1624,16 @@ fn isValidCloseCode(code: u16) bool {
     return (code >= 1000 and code <= 1003) or (code >= 1007 and code <= 1014) or (code >= 3000 and code <= 4999);
 }
 
-/// A WebSocket connection. This task reads the peer's frames and a writer
-/// task writes Dart's, until the close handshake is over, the peer is
-/// gone, or Dart aborts. The socket closes when this returns.
+/// A WebSocket connection. This task reads the peer's frames. A writer
+/// task runs while frames wait to go out, and ends once they are out. It
+/// all stops when the close handshake is over, the peer is gone, or Dart
+/// aborts. The socket closes when this returns.
 fn pumpWebSocket(link: *Link, ex: *Exchange) void {
     link.setReadTimeout(.none);
     link.clearReadError();
-    var wr = zio.spawn(wsWriter, .{ link.writer, ex }) catch return;
+    ex.ws_writer = link.writer;
+    // Frames Dart queued before the 101 was out.
+    _ = startWsWriter(ex);
     var reader = zio.CancelHandle.current();
     defer reader.deinit();
     ex.ws_reader = &reader;
@@ -1619,8 +1647,21 @@ fn pumpWebSocket(link: *Link, ex: *Exchange) void {
     // sets `closed` once it is out and the peer answered, or the wait ran
     // out.
     if (!ex.reactor.destroying) ex.closed.wait() catch {};
-    wr.cancel();
-    freeChunks(&ex.out);
+    // Over, whatever ended it, so no writer starts from here. Frames
+    // queued before then get one go at the socket. A forced server close
+    // queues its close frame right before the abort, and no tick comes to
+    // start a writer for it. This one runs until it would wait.
+    ex.closed.set();
+    if (spawnWsWriter(ex)) {
+        zio.beginShield();
+        zio.yield() catch {};
+        zio.endShield();
+    }
+    ex.ws_writers.cancel();
+    if (ex.ws_wanted) {
+        ex.reactor.ws_wanted.remove(&ex.ws_wanted_node);
+        ex.ws_wanted = false;
+    }
     // Dart takes what is queued for it at its next tick, the close among
     // it. The frame holds on for that, unless Dart let go already.
     var rounds: u32 = 0;
@@ -1630,6 +1671,8 @@ fn pumpWebSocket(link: *Link, ex: *Exchange) void {
         };
         ex.credit.reset();
     }
+    // What Dart queued after the end, which no writer takes.
+    freeChunks(&ex.out);
     postLastEvent(ex);
 }
 
@@ -1756,7 +1799,7 @@ fn pushOutbound(ex: *Exchange, opcode: WsOpcode, payload: []const u8) void {
     }
     chunk.* = .{ .ptr = ptr, .len = payload.len, .kind = @backingInt(opcode) };
     ex.out.push(&chunk.node);
-    ex.out_ready.set();
+    _ = startWsWriter(ex);
 }
 
 /// Hands Dart a message it frees with relic_free, or an empty one.
@@ -1780,8 +1823,10 @@ fn pushWsInboundCopy(ex: *Exchange, kind: WsKind, payload: []const u8) void {
 /// Writes what is queued for the peer: Dart's messages and pings, the
 /// pongs, and a close frame, which is the last. After it the writer waits
 /// ws_close_wait_ms at most for the peer's own close frame, and the
-/// connection ends.
+/// connection ends. Short of that, it ends once the queue is empty, and
+/// the next frame starts another.
 fn wsWriter(w: *std.Io.Writer, ex: *Exchange) void {
+    defer ex.ws_writing = false;
     while (true) {
         while (ex.out.pop()) |node| {
             const chunk: *Chunk = @fieldParentPtr("node", node);
@@ -1798,12 +1843,40 @@ fn wsWriter(w: *std.Io.Writer, ex: *Exchange) void {
             return;
         }
         w.flush() catch return wsWriteFailed(ex);
-        const first = zio.select(.{ .ready = &ex.out_ready, .closed = &ex.closed }) catch return;
-        switch (first) {
-            .closed => return,
-            .ready => ex.out_ready.reset(),
-        }
+        // A frame queued while the flush was out goes in this run. Nothing
+        // waits between this look and the end, so a later one finds no
+        // writer and starts another.
+        if (ex.out.isEmpty()) return;
     }
+}
+
+/// Starts a writer for the frames in `ex.out`. Not while one runs, before
+/// the 101 is out, or once the connection is over. Returns whether it
+/// started one.
+fn startWsWriter(ex: *Exchange) bool {
+    if (ex.closed.isSet()) return false;
+    return spawnWsWriter(ex);
+}
+
+/// startWsWriter, but also once the connection is over.
+fn spawnWsWriter(ex: *Exchange) bool {
+    if (ex.ws_writing or ex.out.isEmpty()) return false;
+    const w = ex.ws_writer orelse return false;
+    ex.ws_writing = true;
+    ex.ws_writers.spawn(wsWriter, .{ w, ex }) catch {
+        ex.ws_writing = false;
+        wsWriteFailed(ex);
+        return false;
+    };
+    return true;
+}
+
+/// Lists the exchange for a writer, which the reactor's next tick starts.
+/// Dart queues frames outside any task, where none can be spawned.
+fn wantWsWriter(ex: *Exchange) void {
+    if (ex.ws_writing or ex.ws_wanted or ex.ws_writer == null or ex.closed.isSet()) return;
+    ex.ws_wanted = true;
+    ex.reactor.ws_wanted.append(&ex.ws_wanted_node);
 }
 
 /// A write failed, so the peer stopped reading. The connection ends, and
@@ -2695,13 +2768,15 @@ export fn relic_reactor_destroy(r: *Reactor) void {
 }
 
 /// One pass of the reactor: runs its tasks, polls the loop for at most
-/// `wait_ms`, takes in the sockets the acceptor handed over, and returns
-/// up to `max` exchanges that are ready for a handler. Afterwards
+/// `wait_ms`, takes in the sockets the acceptor handed over, starts the
+/// writers Dart's WebSocket frames wait for, and returns up to `max`
+/// exchanges that are ready for a handler. Afterwards
 /// relic_reactor_pending says whether to call again at once.
 export fn relic_reactor_tick(r: *Reactor, wait_ms: u32, out: [*]*ExchangeView, max: u32) u32 {
     r.refreshDate();
     r.pending = r.rt.main_executor.tick(.fromMilliseconds(wait_ms)) catch false;
     r.drainIncoming();
+    r.drainWsWanted();
     var n: u32 = 0;
     while (n < max) : (n += 1) {
         const node = r.ready.pop() orelse break;
@@ -2956,7 +3031,7 @@ export fn relic_ws_send(v: *ExchangeView, data: ?[*]u8, len: usize, opcode: u8) 
     chunk.* = .{ .ptr = data, .len = len, .kind = opcode };
     if (opcode == @backingInt(WsOpcode.close)) ex.ws_close_sent = true;
     ex.out.push(&chunk.node);
-    ex.out_ready.set();
+    wantWsWriter(ex);
     return true;
 }
 
@@ -3375,6 +3450,77 @@ test "tick: a request reaches the ready list on the caller's thread and the resp
         sleepMs(5);
     }
     try std.testing.expectEqual(0, r.idle.load(.monotonic));
+    try std.testing.expectEqual(0, r.connections.load(.monotonic));
+}
+
+test "ws: an idle WebSocket holds only its connection task, and a send's writer ends" {
+    const srv = testBind(null) orelse return error.BindFailed;
+    const r = relic_reactor_create(srv, 1) orelse return error.AttachFailed;
+    defer relic_reactor_destroy(r);
+
+    const client = try TestClient.connect(relic_server_port(srv));
+    var out: [4]*ExchangeView = undefined;
+    var rounds: usize = 0;
+    while (rounds < 20) : (rounds += 1) {
+        _ = relic_reactor_tick(r, 0, &out, out.len);
+        sleepMs(5);
+    }
+    try client.writeAll("GET / HTTP/1.1\r\nHost: t\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n" ++
+        "Sec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n");
+    var n: u32 = 0;
+    rounds = 0;
+    while (n == 0 and rounds < 200) : (rounds += 1) {
+        n = relic_reactor_tick(r, 0, &out, out.len);
+        sleepMs(10);
+    }
+    try std.testing.expectEqual(1, n);
+    const v = out[0];
+    // Every task the reactor runs, the connection task parked for the
+    // handler among them.
+    const parked = r.rt.stack_pool.in_use;
+
+    const head = "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n";
+    const head_buf = relic_alloc(head.len).?;
+    @memcpy(head_buf[0..head.len], head);
+    relic_ws_upgrade(v, head_buf, head.len, 1 << 16);
+    var got: [128]u8 = undefined;
+    var total: usize = 0;
+    rounds = 0;
+    while (total < head.len and rounds < 200) : (rounds += 1) {
+        _ = relic_reactor_tick(r, 10, &out, out.len);
+        total += try client.readSome(got[total..]);
+    }
+    try std.testing.expectEqualStrings(head, got[0..total]);
+    rounds = 0;
+    while (rounds < 10) : (rounds += 1) _ = relic_reactor_tick(r, 0, &out, out.len);
+    try std.testing.expectEqual(parked, r.rt.stack_pool.in_use);
+
+    const text = "hi";
+    const text_buf = relic_alloc(text.len).?;
+    @memcpy(text_buf[0..text.len], text);
+    try std.testing.expect(relic_ws_send(v, text_buf, text.len, 1));
+    total = 0;
+    rounds = 0;
+    while (total < 4 and rounds < 200) : (rounds += 1) {
+        _ = relic_reactor_tick(r, 10, &out, out.len);
+        total += try client.readSome(got[total..]);
+    }
+    try std.testing.expectEqualSlices(u8, &.{ 0x81, 0x02, 'h', 'i' }, got[0..total]);
+    rounds = 0;
+    while (r.rt.stack_pool.in_use != parked and rounds < 200) : (rounds += 1) {
+        _ = relic_reactor_tick(r, 0, &out, out.len);
+        sleepMs(5);
+    }
+    try std.testing.expectEqual(parked, r.rt.stack_pool.in_use);
+
+    // The peer drops. The connection holds on for up to a second for Dart
+    // to take the news, which nothing here does, and then ends.
+    client.close();
+    rounds = 0;
+    while (r.connections.load(.monotonic) != 0 and rounds < 600) : (rounds += 1) {
+        _ = relic_reactor_tick(r, 0, &out, out.len);
+        sleepMs(5);
+    }
     try std.testing.expectEqual(0, r.connections.load(.monotonic));
 }
 
