@@ -349,8 +349,8 @@ const Exchange = struct {
     /// Set by Dart when a handler asks for `cancelled`. The task then
     /// watches the socket for EOF while it waits.
     watch: zio.Event = .init,
-    /// Outbound chunks from Dart. A streamed body and a raw connection
-    /// set `out_ready` after every push. A WebSocket starts a writer.
+    /// Outbound chunks from Dart. A streamed body sets `out_ready` after
+    /// every push. A WebSocket and a raw connection start a writer.
     out: Fifo = .{},
     out_ready: zio.Event = .init,
     /// Inbound chunks for Dart, which sets `credit` after it takes one.
@@ -369,18 +369,17 @@ const Exchange = struct {
     /// A close frame is queued or written on a WebSocket. After it the
     /// task hands Dart no message and answers no ping.
     ws_close_sent: bool = false,
-    /// The connection task while it reads a WebSocket's frames. A path that
-    /// ends the connection stops that read through it, since no event
-    /// reaches a read.
+    /// The connection task while it reads a WebSocket's frames or a raw
+    /// connection's bytes. A path that ends the connection stops that read
+    /// through it, since no event reaches a read.
     reader: ?*zio.CancelHandle = null,
     /// A stop went to the read. Its cancel is still pending when the read
     /// ended on its own first.
     reader_stopped: bool = false,
-    /// Where a WebSocket's frames go, from the 101 on. No writer starts
-    /// without it.
+    /// Where a WebSocket's frames or a raw connection's bytes go, once the
+    /// connection is the task's. No writer starts without it.
     writer: ?*std.Io.Writer = null,
-    /// A writer task is writing a WebSocket's frames. It ends once none is
-    /// left.
+    /// A writer task is writing Dart's output. It ends once none is left.
     writing: bool = false,
     /// Holds the writer task, so the end of the connection can end it.
     writers: zio.Group = .init,
@@ -449,7 +448,7 @@ pub const Reactor = struct {
     /// The open connections, for the sweeper to walk.
     conns: std.DoublyLinkedList = .{},
     sweeping: bool = false,
-    /// WebSockets Dart queued frames on that have no writer. Dart's calls
+    /// Connections Dart queued output on that have no writer. Dart's calls
     /// run outside any task, so the next tick starts one for each.
     writers_wanted: std.DoublyLinkedList = .{},
     /// The Date stamped on responses, and the loop time at which it is a
@@ -1425,21 +1424,12 @@ fn pumpResponseBody(ex: *Exchange, w: *std.Io.Writer) bool {
 }
 
 /// A hijacked connection, bytes both ways between the socket and Dart's
-/// chunk queues with no framing. A reader task and a writer task do the
-/// blocking parts. This one waits for Dart to close its sink or abort,
-/// then cancels both so a blocked read or write never holds the
-/// connection. The socket closes when this returns.
+/// chunk queues with no framing. This task reads, and a writer task runs
+/// while chunks wait. It ends once Dart closed its sink and the rest is
+/// out, or Dart aborts. The socket closes when this returns.
 fn pumpRaw(link: *Link, ex: *Exchange) void {
-    link.setReadTimeout(.none);
-    link.clearReadError();
-    var rd = zio.spawn(rawReader, .{ link, ex }) catch return;
-    var wr = zio.spawn(rawWriter, .{ link.writer, ex }) catch {
-        rd.cancel();
-        return;
-    };
-    ex.closed.wait() catch {};
-    rd.cancel();
-    wr.cancel();
+    pumpTakenOver(link, ex, rawReader);
+    endWriters(ex);
     freeChunks(&ex.out);
     // The last event. Dart drops its reference to the view on it, so the
     // frame is free to die once this returns.
@@ -1481,26 +1471,24 @@ fn pushLastInbound(ex: *Exchange, ok: bool) void {
 
 /// Writes Dart's chunks as they come. The last one, Dart's sink close,
 /// flushes and ends the connection. A failed write is reported once and
-/// the rest is dropped until Dart reacts.
+/// the rest is dropped until Dart reacts. Short of the last chunk, the
+/// writer ends once the queue is empty, and the next chunk starts another.
 fn rawWriter(w: *std.Io.Writer, ex: *Exchange) void {
-    var failed = false;
-    while (true) {
-        while (ex.out.pop()) |node| {
-            const chunk: *Chunk = @fieldParentPtr("node", node);
-            defer std.heap.c_allocator.destroy(chunk);
-            defer if (chunk.ptr) |p| std.c.free(p);
-            if (chunk.last) {
-                if (!failed) w.flush() catch {};
-                ex.closed.set();
-                return;
-            }
-            if (writeOutbound(ex, w, chunk, false, &failed) and !ex.sink_closed) postExchangeEvent(ex);
+    defer ex.writing = false;
+    var failed = ex.view.write_failed != 0;
+    // Nothing waits between the look that finds the queue empty and the
+    // end, so a later chunk finds no writer and starts another.
+    while (ex.out.pop()) |node| {
+        const chunk: *Chunk = @fieldParentPtr("node", node);
+        defer std.heap.c_allocator.destroy(chunk);
+        defer if (chunk.ptr) |p| std.c.free(p);
+        if (chunk.last) {
+            if (!failed) w.flush() catch {};
+            ex.closed.set();
+            stopReader(ex);
+            return;
         }
-        const first = zio.select(.{ .ready = &ex.out_ready, .closed = &ex.closed }) catch return;
-        switch (first) {
-            .closed => return,
-            .ready => ex.out_ready.reset(),
-        }
+        if (writeOutbound(ex, w, chunk, false, &failed) and !ex.sink_closed) postExchangeEvent(ex);
     }
 }
 
@@ -1624,44 +1612,58 @@ fn isValidCloseCode(code: u16) bool {
     return (code >= 1000 and code <= 1003) or (code >= 1007 and code <= 1014) or (code >= 3000 and code <= 4999);
 }
 
-/// A WebSocket connection. This task reads the peer's frames. A writer
-/// task runs while frames wait to go out, and ends once they are out. It
-/// all stops when the close handshake is over, the peer is gone, or Dart
-/// aborts. The socket closes when this returns.
-fn pumpWebSocket(link: *Link, ex: *Exchange) void {
+/// What a WebSocket and a raw connection share. This task runs `read`
+/// until the peer ends or the connection is over. A writer task runs while
+/// Dart's output waits, and ends once it is out. Returns once the
+/// connection is over, and no writer starts after that.
+fn pumpTakenOver(link: *Link, ex: *Exchange, comptime read: fn (*Link, *Exchange) void) void {
     link.setReadTimeout(.none);
     link.clearReadError();
     ex.writer = link.writer;
-    // Frames Dart queued before the 101 was out.
+    // What Dart queued before the connection was this task's.
     _ = startWriter(ex);
     var reader = zio.CancelHandle.current();
     defer reader.deinit();
     ex.reader = &reader;
     // A close before this point found no read to stop.
-    if (!ex.closed.isSet()) wsReader(link, ex);
+    if (!ex.closed.isSet()) read(link, ex);
     ex.reader = null;
     // A stop that came while the reader was between waits is still
     // pending. It must not end a wait below.
     if (ex.reader_stopped) zio.checkCancel() catch {};
-    // A close frame the reader queued is still on its way. The writer
-    // sets `closed` once it is out and the peer answered, or the wait ran
-    // out.
+    // The writer sets `closed` once the last of the output is out, a
+    // WebSocket's close frame or the end of a raw connection's sink. An
+    // abort, a dead peer or a failed write sets it at once.
     if (!ex.reactor.destroying) ex.closed.wait() catch {};
-    // Over, whatever ended it, so no writer starts from here. Frames
-    // queued before then get one go at the socket. A forced server close
-    // queues its close frame right before the abort, and no tick comes to
-    // start a writer for it. This one runs until it would wait.
     ex.closed.set();
-    if (spawnWriter(ex)) {
-        zio.beginShield();
-        zio.yield() catch {};
-        zio.endShield();
-    }
+}
+
+/// Ends a writer that still runs, and takes the connection off the
+/// reactor's list.
+fn endWriters(ex: *Exchange) void {
     ex.writers.cancel();
     if (ex.writer_wanted) {
         ex.reactor.writers_wanted.remove(&ex.writer_wanted_node);
         ex.writer_wanted = false;
     }
+}
+
+/// A WebSocket connection. This task reads the peer's frames. A writer
+/// task runs while frames wait to go out, and ends once they are out. It
+/// all stops when the close handshake is over, the peer is gone, or Dart
+/// aborts. The socket closes when this returns.
+fn pumpWebSocket(link: *Link, ex: *Exchange) void {
+    pumpTakenOver(link, ex, wsReader);
+    // Frames queued before the end get one go at the socket. A forced
+    // server close queues its close frame right before the abort, and no
+    // tick comes to start a writer for it. This one runs until it would
+    // wait.
+    if (spawnWriter(ex)) {
+        zio.beginShield();
+        zio.yield() catch {};
+        zio.endShield();
+    }
+    endWriters(ex);
     // Dart takes what is queued for it at its next tick, the close among
     // it. The frame holds on for that, unless Dart let go already.
     var rounds: u32 = 0;
@@ -1834,15 +1836,15 @@ fn wsWriter(w: *std.Io.Writer, ex: *Exchange) void {
             defer if (chunk.ptr) |p| std.c.free(p);
             const payload: []const u8 = if (chunk.ptr) |p| p[0..chunk.len] else "";
             const opcode: WsOpcode = @fromBackingInt(@intCast(@as(u4, @truncate(chunk.kind))));
-            writeFrame(w, opcode, payload) catch return wsWriteFailed(ex);
+            writeFrame(w, opcode, payload) catch return writeFailed(ex);
             if (opcode != .close) continue;
-            w.flush() catch return wsWriteFailed(ex);
+            w.flush() catch return writeFailed(ex);
             ex.peer_close.waitTimeout(.fromMilliseconds(ws_close_wait_ms)) catch {};
             ex.closed.set();
             stopReader(ex);
             return;
         }
-        w.flush() catch return wsWriteFailed(ex);
+        w.flush() catch return writeFailed(ex);
         // A frame queued while the flush was out goes in this run. Nothing
         // waits between this look and the end, so a later one finds no
         // writer and starts another.
@@ -1850,8 +1852,8 @@ fn wsWriter(w: *std.Io.Writer, ex: *Exchange) void {
     }
 }
 
-/// Starts a writer for the frames in `ex.out`. Not while one runs, before
-/// the 101 is out, or once the connection is over. Returns whether it
+/// Starts a writer for what is in `ex.out`. Not while one runs, before the
+/// connection is the task's, or once it is over. Returns whether it
 /// started one.
 fn startWriter(ex: *Exchange) bool {
     if (ex.closed.isSet()) return false;
@@ -1863,25 +1865,30 @@ fn spawnWriter(ex: *Exchange) bool {
     if (ex.writing or ex.out.isEmpty()) return false;
     const w = ex.writer orelse return false;
     ex.writing = true;
-    ex.writers.spawn(wsWriter, .{ w, ex }) catch {
+    const spawned = if (ex.upgraded)
+        ex.writers.spawn(wsWriter, .{ w, ex })
+    else
+        ex.writers.spawn(rawWriter, .{ w, ex });
+    spawned catch {
         ex.writing = false;
-        wsWriteFailed(ex);
+        writeFailed(ex);
         return false;
     };
     return true;
 }
 
 /// Lists the exchange for a writer, which the reactor's next tick starts.
-/// Dart queues frames outside any task, where none can be spawned.
+/// Dart queues output outside any task, where none can be spawned.
 fn wantWriter(ex: *Exchange) void {
     if (ex.writing or ex.writer_wanted or ex.writer == null or ex.closed.isSet()) return;
     ex.writer_wanted = true;
     ex.reactor.writers_wanted.append(&ex.writer_wanted_node);
 }
 
-/// A write failed, so the peer stopped reading. The connection ends, and
-/// Dart hears 1006 at the last event.
-fn wsWriteFailed(ex: *Exchange) void {
+/// A WebSocket's write failed, so the peer stopped reading, or no writer
+/// could start. The connection ends, and Dart hears of it at the last
+/// event, as 1006 on a WebSocket.
+fn writeFailed(ex: *Exchange) void {
     ex.view.write_failed = 1;
     ex.closed.set();
     stopReader(ex);
@@ -2769,7 +2776,7 @@ export fn relic_reactor_destroy(r: *Reactor) void {
 
 /// One pass of the reactor: runs its tasks, polls the loop for at most
 /// `wait_ms`, takes in the sockets the acceptor handed over, starts the
-/// writers Dart's WebSocket frames wait for, and returns up to `max`
+/// writers Dart's queued output waits for, and returns up to `max`
 /// exchanges that are ready for a handler. Afterwards
 /// relic_reactor_pending says whether to call again at once.
 export fn relic_reactor_tick(r: *Reactor, wait_ms: u32, out: [*]*ExchangeView, max: u32) u32 {
@@ -2944,8 +2951,15 @@ export fn relic_write_chunk(v: *ExchangeView, data: [*]u8, len: usize) bool {
     const chunk = std.heap.c_allocator.create(Chunk) catch return false;
     chunk.* = .{ .ptr = data, .len = len };
     ex.out.push(&chunk.node);
-    ex.out_ready.set();
+    outputQueued(ex);
     return true;
+}
+
+/// Tells whoever writes `ex.out` that a chunk came: the connection task of
+/// a streamed body, or the writer the next tick starts for a raw
+/// connection.
+fn outputQueued(ex: *Exchange) void {
+    if (ex.hijacked) wantWriter(ex) else ex.out_ready.set();
 }
 
 /// Ends a streamed response. `ok` false drops the connection instead of
@@ -2960,7 +2974,7 @@ export fn relic_finish_stream(v: *ExchangeView, ok: bool) void {
     };
     chunk.* = .{ .ptr = null, .len = 0, .last = true, .ok = ok };
     ex.out.push(&chunk.node);
-    ex.out_ready.set();
+    outputQueued(ex);
 }
 
 /// Takes the next inbound chunk of a streamed request body. Returns 0 when
@@ -3522,6 +3536,70 @@ test "ws: an idle WebSocket holds only its connection task, and a send's writer 
         sleepMs(5);
     }
     try std.testing.expectEqual(0, r.connections.load(.monotonic));
+}
+
+test "hijack: an idle hijacked connection holds only its connection task, and a write's writer ends" {
+    const srv = testBind(null) orelse return error.BindFailed;
+    const r = relic_reactor_create(srv, 1) orelse return error.AttachFailed;
+    defer relic_reactor_destroy(r);
+
+    const client = try TestClient.connect(relic_server_port(srv));
+    var out: [4]*ExchangeView = undefined;
+    var rounds: usize = 0;
+    while (rounds < 20) : (rounds += 1) {
+        _ = relic_reactor_tick(r, 0, &out, out.len);
+        sleepMs(5);
+    }
+    try client.writeAll("GET /raw HTTP/1.1\r\nHost: t\r\n\r\n");
+    var n: u32 = 0;
+    rounds = 0;
+    while (n == 0 and rounds < 200) : (rounds += 1) {
+        n = relic_reactor_tick(r, 0, &out, out.len);
+        sleepMs(10);
+    }
+    try std.testing.expectEqual(1, n);
+    const v = out[0];
+    // Every task the reactor runs, the connection task parked for the
+    // handler among them.
+    const parked = r.rt.stack_pool.in_use;
+
+    relic_hijack(v);
+    rounds = 0;
+    while (rounds < 10) : (rounds += 1) {
+        _ = relic_reactor_tick(r, 0, &out, out.len);
+        sleepMs(5);
+    }
+    try std.testing.expectEqual(parked, r.rt.stack_pool.in_use);
+
+    const text = "hi";
+    const buf = relic_alloc(text.len).?;
+    @memcpy(buf[0..text.len], text);
+    try std.testing.expect(relic_write_chunk(v, buf, text.len));
+    var got: [16]u8 = undefined;
+    var total: usize = 0;
+    rounds = 0;
+    while (total < text.len and rounds < 200) : (rounds += 1) {
+        _ = relic_reactor_tick(r, 10, &out, out.len);
+        total += try client.readSome(got[total..]);
+    }
+    try std.testing.expectEqualStrings(text, got[0..total]);
+    rounds = 0;
+    while (r.rt.stack_pool.in_use != parked and rounds < 200) : (rounds += 1) {
+        _ = relic_reactor_tick(r, 0, &out, out.len);
+        sleepMs(5);
+    }
+    try std.testing.expectEqual(parked, r.rt.stack_pool.in_use);
+
+    // Dart closes its sink. The writer writes the end, and the connection
+    // closes.
+    relic_finish_stream(v, true);
+    rounds = 0;
+    while (r.connections.load(.monotonic) != 0 and rounds < 600) : (rounds += 1) {
+        _ = relic_reactor_tick(r, 0, &out, out.len);
+        sleepMs(5);
+    }
+    try std.testing.expectEqual(0, r.connections.load(.monotonic));
+    client.close();
 }
 
 const test_ca = @import("test_certs").ca;

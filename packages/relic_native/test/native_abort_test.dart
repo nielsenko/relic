@@ -95,4 +95,31 @@ void main() {
       expect(await answerNextRequest(), startsWith('HTTP/1.1 200 '));
     },
   );
+
+  test(
+    'Given a hijacked exchange whose bytes the client has, '
+    'when the exchange is aborted, '
+    'then the connection closes and the adapter answers the next request',
+    () async {
+      final socket = await Socket.connect(
+        InternetAddress.loopbackIPv4,
+        adapter.listeners.first.port,
+      );
+      socket.write('GET /raw HTTP/1.1\r\nHost: localhost\r\n\r\n');
+      await socket.flush();
+      final exchange = await nextExchange();
+      final channel = await exchange.hijack();
+      channel.sink.add(utf8.encode('hello'));
+      final first = Completer<void>();
+      final closed = socket.listen((_) {
+        if (!first.isCompleted) first.complete();
+      }).asFuture<void>();
+      await first.future.timeout(const Duration(seconds: 3));
+
+      exchange.abort();
+
+      await closed.timeout(const Duration(seconds: 3));
+      expect(await answerNextRequest(), startsWith('HTTP/1.1 200 '));
+    },
+  );
 }
