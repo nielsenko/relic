@@ -368,6 +368,13 @@ const Exchange = struct {
     /// A close frame is queued or written on a WebSocket. After it the
     /// task hands Dart no message and answers no ping.
     ws_close_sent: bool = false,
+    /// The connection task while it reads a WebSocket's frames. A path that
+    /// ends the connection stops that read through it, since no event
+    /// reaches a read.
+    ws_reader: ?*zio.CancelHandle = null,
+    /// A stop went to the read. Its cancel is still pending when the read
+    /// ended on its own first.
+    ws_stopped: bool = false,
 
     fn init(self: *Exchange, reactor: *Reactor, view: ExchangeView) void {
         self.* = .{ .view = view, .reactor = reactor };
@@ -1592,25 +1599,32 @@ fn isValidCloseCode(code: u16) bool {
     return (code >= 1000 and code <= 1003) or (code >= 1007 and code <= 1014) or (code >= 3000 and code <= 4999);
 }
 
-/// A WebSocket connection. A reader task and a writer task run between
-/// the socket and Dart's chunk queues until the close handshake is over,
-/// the peer is gone, or Dart aborts. The socket closes when this returns.
+/// A WebSocket connection. This task reads the peer's frames and a writer
+/// task writes Dart's, until the close handshake is over, the peer is
+/// gone, or Dart aborts. The socket closes when this returns.
 fn pumpWebSocket(link: *Link, ex: *Exchange) void {
     link.setReadTimeout(.none);
     link.clearReadError();
-    var rd = zio.spawn(wsReader, .{ link, ex }) catch return;
-    var wr = zio.spawn(wsWriter, .{ link.writer, ex }) catch {
-        rd.cancel();
-        return;
-    };
-    ex.closed.wait() catch {};
-    rd.cancel();
+    var wr = zio.spawn(wsWriter, .{ link.writer, ex }) catch return;
+    var reader = zio.CancelHandle.current();
+    defer reader.deinit();
+    ex.ws_reader = &reader;
+    // A close before this point found no read to stop.
+    if (!ex.closed.isSet()) wsReader(link, ex);
+    ex.ws_reader = null;
+    // A stop that came while the reader was between waits is still
+    // pending. It must not end a wait below.
+    if (ex.ws_stopped) zio.checkCancel() catch {};
+    // A close frame the reader queued is still on its way. The writer
+    // sets `closed` once it is out and the peer answered, or the wait ran
+    // out.
+    if (!ex.reactor.destroying) ex.closed.wait() catch {};
     wr.cancel();
     freeChunks(&ex.out);
     // Dart takes what is queued for it at its next tick, the close among
     // it. The frame holds on for that, unless Dart let go already.
     var rounds: u32 = 0;
-    while (!ex.aborted and !ex.in.isEmpty() and rounds < 10) : (rounds += 1) {
+    while (!ex.aborted and !ex.reactor.destroying and !ex.in.isEmpty() and rounds < 10) : (rounds += 1) {
         ex.credit.waitTimeout(.fromMilliseconds(ws_drain_wait_ms / 10)) catch |err| {
             if (err == error.Canceled) break;
         };
@@ -1780,6 +1794,7 @@ fn wsWriter(w: *std.Io.Writer, ex: *Exchange) void {
             w.flush() catch return wsWriteFailed(ex);
             ex.peer_close.waitTimeout(.fromMilliseconds(ws_close_wait_ms)) catch {};
             ex.closed.set();
+            stopWsReader(ex);
             return;
         }
         w.flush() catch return wsWriteFailed(ex);
@@ -1796,6 +1811,15 @@ fn wsWriter(w: *std.Io.Writer, ex: *Exchange) void {
 fn wsWriteFailed(ex: *Exchange) void {
     ex.view.write_failed = 1;
     ex.closed.set();
+    stopWsReader(ex);
+}
+
+/// Ends the connection task's read of a WebSocket, when the connection is
+/// over for a reason the read cannot see.
+fn stopWsReader(ex: *Exchange) void {
+    const reader = ex.ws_reader orelse return;
+    ex.ws_stopped = true;
+    reader.requestCancel();
 }
 
 fn writeChunk(w: *std.Io.Writer, data: []const u8, chunked: bool) !void {
@@ -2895,6 +2919,7 @@ export fn relic_abort(v: *ExchangeView) void {
     ex.aborted = true;
     ex.done.set();
     ex.closed.set();
+    stopWsReader(ex);
 }
 
 /// Takes the connection as a raw byte channel. Bytes from the peer come
