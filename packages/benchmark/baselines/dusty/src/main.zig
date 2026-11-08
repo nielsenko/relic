@@ -2,7 +2,8 @@
 //! the floor for relic_native, which runs on a fork of zio. One executor by
 //! default, so it compares with one isolate. A second number is the executor
 //! count, so it compares with that many isolates. With a certificate chain
-//! and a key it serves HTTPS through tls.zig, as relic_native does.
+//! and a key it serves HTTPS through tls.zig, as relic_native does. At / it
+//! echoes WebSocket messages for tool/sweep/ws.sh.
 //!
 //!   zig build run --release -- 8093
 //!   zig build run --release -- 8093 4
@@ -84,6 +85,30 @@ fn browser(req: *http.Request, res: *http.Response) !void {
     res.body = body.written();
 }
 
+/// Sends every text and binary message back as it came, until the peer
+/// closes. dusty answers pings and echoes the close itself.
+fn echo(req: *http.Request, res: *http.Response) !void {
+    var ws = try res.upgradeWebSocket(req) orelse {
+        res.status = .bad_request;
+        return;
+    };
+    defer ws.deinit();
+    // dusty's request timeout, 30 seconds by default, would end the whole
+    // session. The other echo servers have none.
+    req.setTimeout(.none);
+    while (true) {
+        const msg = ws.receive() catch |err| switch (err) {
+            error.EndOfStream => return,
+            else => return err,
+        };
+        switch (msg.type) {
+            .text, .binary => try ws.send(msg.type, msg.data),
+            .close => return,
+            else => {},
+        }
+    }
+}
+
 pub fn main(init: std.process.Init) !void {
     const args = try init.minimal.args.toSlice(init.arena.allocator());
     const port = if (args.len > 1) try std.fmt.parseInt(u16, args[1], 10) else 8093;
@@ -106,11 +131,16 @@ pub fn main(init: std.process.Init) !void {
     defer rt.deinit();
 
     const address: http.Address = .{ .ip = .{ .ip4 = .loopback(port) } };
-    var server = http.Server(void).init(init.gpa, rt.io(), .{ .listeners = &.{.{ .address = address, .tls = tls }} }, {});
+    var server = http.Server(void).init(init.gpa, rt.io(), .{
+        .listeners = &.{.{ .address = address, .tls = tls }},
+        // ws.sh holds 10000 idle WebSockets, dusty's default cap.
+        .max_connections = null,
+    }, {});
     defer server.deinit();
     server.router.get("/plaintext", plaintext);
     server.router.get("/headers", headers);
     server.router.get("/browser", browser);
+    server.router.get("/", echo);
 
     std.debug.print("listening on {s}://127.0.0.1:{d}/\n", .{ if (tls == null) "http" else "https", port });
     try server.run();

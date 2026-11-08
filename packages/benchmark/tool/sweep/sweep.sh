@@ -13,7 +13,7 @@
 # is the http_load argument list. OHA_THREADS sizes oha's runtime, 4 by
 # default. The eight-way targets run on 16 cores or more, or when named in
 # ONLY. The baselines must be built first, see the comments at the top of
-# baselines/*/.
+# baselines/*/. The WebSocket targets come last, from ws.sh.
 set -u
 R=$(cd "$(dirname "$0")/../.." && pwd)
 C=$R/../relic_native/test/certs
@@ -171,4 +171,5 @@ scenario relic-native8-tls relic-native8-tls=native8 --tls
 scenario relic-native8-handler-tls relic-native8-handler-tls=native8-handler --tls
 scenario relic-io8-tls relic-io8-tls=io8 --tls
 scenario shelf8-tls shelf8-tls=shelf8 --tls
+. "$R/tool/sweep/ws.sh"
 echo "done $(date)" >> "$N/progress.log"

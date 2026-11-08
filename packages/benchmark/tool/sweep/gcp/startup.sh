@@ -91,6 +91,7 @@ if [[ -s /tmp/relic.patch ]]; then git apply /tmp/relic.patch; fi
 dart pub get
 (cd packages/relic_native && zig version)
 (cd packages/benchmark/baselines/hyper && cargo build --release --quiet)
+(cd packages/benchmark/baselines/tungstenite && cargo build --release --quiet)
 (cd packages/benchmark/baselines/dusty && zig build --release)
 BENCH
 
