@@ -4,12 +4,15 @@
 //! `--mode=idle` opens the connections and leaves them quiet, and reports
 //! what they added to the server's resident memory. Given the server's pid
 //! on Linux, echo also reports the cores the server used while measured.
-//! Each run prints one line of JSON.
+//! Each run prints one line of JSON. A wss URL needs `--ca`, the PEM file
+//! of the authority that signed the server's certificate.
 //!
 //!   relic_baseline_ws_load --mode=echo --url=ws://127.0.0.1:8301/ \
 //!       --connections=64 --size=64 --seconds=10 --warmup=3 --threads=8
 //!   relic_baseline_ws_load --mode=idle --url=ws://127.0.0.1:8301/ \
 //!       --connections=10000 --seconds=5 --pid=1234
+//!   relic_baseline_ws_load --mode=echo --url=wss://127.0.0.1:8351/ \
+//!       --ca=../../../relic_native/test/certs/ca_cert.pem
 
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Arc;
@@ -17,11 +20,13 @@ use std::time::{Duration, Instant};
 
 use futures_util::{SinkExt, StreamExt};
 use hdrhistogram::Histogram;
+use rustls_pki_types::pem::PemObject;
+use rustls_pki_types::CertificateDer;
 use tokio::net::TcpStream;
 use tokio::sync::Semaphore;
 use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
 use tokio_tungstenite::tungstenite::Message;
-use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
+use tokio_tungstenite::{Connector, MaybeTlsStream, WebSocketStream};
 
 type Socket = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
@@ -40,6 +45,7 @@ struct Args {
     binary: bool,
     threads: usize,
     pid: Option<u32>,
+    ca: Option<String>,
 }
 
 fn parse_args() -> Args {
@@ -53,6 +59,7 @@ fn parse_args() -> Args {
         binary: false,
         threads: 4,
         pid: None,
+        ca: None,
     };
     for arg in std::env::args().skip(1) {
         let (key, value) = arg.split_once('=').unwrap_or((arg.as_str(), ""));
@@ -66,6 +73,7 @@ fn parse_args() -> Args {
             "--binary" => args.binary = true,
             "--threads" => args.threads = value.parse().expect("--threads"),
             "--pid" => args.pid = value.parse().ok(),
+            "--ca" => args.ca = Some(value.into()),
             _ => panic!("unknown argument {arg}"),
         }
     }
@@ -106,20 +114,38 @@ fn json_opt<T: std::fmt::Display>(value: Option<T>) -> String {
     value.map_or("null".into(), |v| v.to_string())
 }
 
-/// Opens `count` connections, at most 256 handshakes at a time, each
+/// A TLS connector that trusts the authorities in the PEM file `ca`, or
+/// none without one, which leaves a wss URL to fail.
+fn connector(ca: Option<&str>) -> Option<Connector> {
+    let mut roots = rustls::RootCertStore::empty();
+    for cert in CertificateDer::pem_file_iter(ca?).expect("--ca") {
+        roots.add(cert.expect("--ca")).expect("--ca");
+    }
+    let config = rustls::ClientConfig::builder()
+        .with_root_certificates(roots)
+        .with_no_client_auth();
+    Some(Connector::Rustls(Arc::new(config)))
+}
+
+/// Opens the connections, at most 256 handshakes at a time, each
 /// reading into 4 KiB rather than tungstenite's default 128 KiB. Failed
 /// ones are left out.
-async fn connect_all(url: &str, count: usize) -> Vec<Socket> {
+async fn connect_all(args: &Args) -> Vec<Socket> {
+    let count = args.connections;
+    let url = &args.url;
+    let connector = connector(args.ca.as_deref());
     let gate = Arc::new(Semaphore::new(256));
     let handles: Vec<_> = (0..count)
         .map(|_| {
             let gate = gate.clone();
             let url = url.to_string();
+            let connector = connector.clone();
             tokio::spawn(async move {
                 let _permit = gate.acquire_owned().await.ok()?;
                 let mut config = WebSocketConfig::default();
                 config.read_buffer_size = 4096;
-                let connect = tokio_tungstenite::connect_async_with_config(url, Some(config), true);
+                let connect =
+                    tokio_tungstenite::connect_async_tls_with_config(url, Some(config), true, connector);
                 match tokio::time::timeout(TIMEOUT, connect).await {
                     Ok(Ok((socket, _))) => Some(socket),
                     _ => None,
@@ -160,7 +186,7 @@ async fn round_trip(socket: &mut Socket, message: &Message) -> bool {
 }
 
 async fn echo(args: &Args) {
-    let sockets = connect_all(&args.url, args.connections).await;
+    let sockets = connect_all(args).await;
     let opened = sockets.len();
     let phase = Arc::new(AtomicU8::new(WARMUP));
     let message = message(args.size, args.binary);
@@ -236,7 +262,7 @@ async fn echo(args: &Args) {
 async fn idle(args: &Args) {
     let before = rss_kib(args.pid);
     let started = Instant::now();
-    let mut sockets = connect_all(&args.url, args.connections).await;
+    let mut sockets = connect_all(args).await;
     let connect_seconds = started.elapsed().as_secs_f64();
     tokio::time::sleep(Duration::from_secs_f64(args.seconds)).await;
     let after = rss_kib(args.pid);
