@@ -5,13 +5,13 @@
     .minimum_zig_version = "0.17.1",
     .dependencies = .{
         .dusty = .{
-            .url = "git+https://github.com/lalinsky/dusty#e319833262556bf0c899e9495e591b675451c88d",
-            .hash = "dusty-0.4.0-Qdw7RpnwIwAnta8P0u9ncaZ1X_5ALIQpuJGb355g6M_5",
+            .url = "git+https://github.com/lalinsky/dusty?ref=v0.6.0#102b0c76eee2ed9c0ea3fff199473a7d731eb258",
+            .hash = "dusty-0.6.0-Qdw7RhVxJgA6uMKSP4-Ll-7uj8fkY7BJQ9VcRFMAFVk0",
         },
-        // The zio relic_native pins, so both run on the same event loop.
+        // The release dusty 0.6.0's deployment guide and examples pin.
         .zio = .{
-            .url = "git+https://github.com/nielsenko/zio#e6726fb0e26aed90185726a22f40ea2ad9ebee0b",
-            .hash = "zio-0.19.0-xHbVVIyCLQCizEpbPUPuXEJW9WVoof9HR0uHLZGi0MqA",
+            .url = "git+https://github.com/lalinsky/zio?ref=v0.20.1#c0a6b5877c9bbc71d2d2c0b3374ce7fa61a4ec12",
+            .hash = "zio-0.20.1-xHbVVI0wLwDgE2dXWDCWH0UfCQYEhnBYHs1Td12oAGeR",
         },
     },
     .paths = .{ "build.zig", "build.zig.zon", "src" },
