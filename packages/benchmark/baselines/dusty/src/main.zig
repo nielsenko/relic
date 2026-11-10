@@ -1,8 +1,9 @@
-//! The http_load.dart routes on dusty, a Zig HTTP server on zio, as the
-//! floor for relic_native, which runs on the same zio. One executor by
-//! default, so it compares with one isolate; a second number is the executor
+//! The http_load.dart routes on dusty, a Zig HTTP server on upstream zio, as
+//! the floor for relic_native, which runs on a fork of zio. One executor by
+//! default, so it compares with one isolate. A second number is the executor
 //! count, so it compares with that many isolates. With a certificate chain
-//! and a key it serves HTTPS through tls.zig, as relic_native does.
+//! and a key it serves HTTPS through ztls on AWS-LC, in TLS 1.3 only.
+//! relic_native uses tls.zig.
 //!
 //!   zig build run --release -- 8093
 //!   zig build run --release -- 8093 4
@@ -96,7 +97,10 @@ pub fn main(init: std.process.Init) !void {
         } else |_| {}
     }
     if (rest.len == 1) return error.KeyPathMissing;
-    const tls: ?http.ServerConfig.Tls = if (rest.len >= 2) .{ .cert_path = rest[0], .key_path = rest[1] } else null;
+    const tls: ?http.ServerConfig.Tls = if (rest.len >= 2)
+        .{ .certificate = .{ .file = .{ .cert_path = rest[0], .key_path = rest[1] } } }
+    else
+        null;
     items = try buildItems(init.arena.allocator());
 
     const rt = try zio.Runtime.init(init.gpa, .{ .executors = .exact(executors) });
