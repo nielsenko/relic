@@ -2,7 +2,8 @@
 //! servers. One tokio runtime, HTTP/1.1 keep-alive. A second number after
 //! the port is the worker thread count, one by default so it compares with
 //! one isolate, and one worker runs on the current thread with no pool.
-//! With a certificate chain and a key it serves HTTPS through rustls.
+//! With a certificate chain and a key it serves HTTPS through rustls. It
+//! listens on BENCH_ADDRESS, or on the IPv4 loopback when that is unset.
 //!
 //!   cargo run --release -- 8090
 //!   cargo run --release -- 8090 4
@@ -12,7 +13,7 @@
 //!       ../../../relic_native/test/certs/localhost_key.pem
 
 use std::convert::Infallible;
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 
 use bytes::Bytes;
@@ -168,7 +169,11 @@ async fn serve(port: u16, rest: &[String]) -> Result<(), Box<dyn std::error::Err
         _ => None,
     };
     let items: &'static str = Box::leak(items().into_boxed_str());
-    let addr = SocketAddr::from(([127, 0, 0, 1], port));
+    let ip: IpAddr = match std::env::var("BENCH_ADDRESS") {
+        Ok(text) => text.parse()?,
+        Err(_) => IpAddr::from([127, 0, 0, 1]),
+    };
+    let addr = SocketAddr::from((ip, port));
     let listener = TcpListener::bind(addr).await?;
     println!("listening on {}://{addr}/", if acceptor.is_some() { "https" } else { "http" });
     loop {

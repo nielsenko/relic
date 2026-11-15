@@ -5,6 +5,7 @@ import 'dart:isolate';
 import 'package:relic/relic.dart';
 import 'package:relic_native/relic_native.dart';
 
+import 'bench_address.dart';
 import 'shelf_server.dart';
 
 /// A started server: where it listens and how to stop it.
@@ -52,8 +53,8 @@ var _serveCount = 0;
   );
 }
 
-/// Starts [served] on [kind], `io`, `native` or `shelf`, at [port] on the
-/// IPv4 loopback with [isolates] isolates, over TLS with
+/// Starts [served] on [kind], `io`, `native` or `shelf`, at [port] on
+/// [benchAddress] with [isolates] isolates, over TLS with
 /// [testCertificates] when [tls] is set.
 ///
 /// Port 0 picks a free port.
@@ -64,7 +65,7 @@ Future<Server> startServer(
   int isolates = 1,
   bool tls = false,
 }) async {
-  final address = InternetAddress.loopbackIPv4;
+  final address = benchAddress;
   final certs = tls ? testCertificates : null;
   switch (kind) {
     case 'shelf':

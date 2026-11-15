@@ -8,6 +8,8 @@ import 'package:shelf/shelf_io.dart' as shelf_io;
 import 'package:shelf_router/shelf_router.dart';
 import 'package:shelf_web_socket/shelf_web_socket.dart';
 
+import 'bench_address.dart';
+
 /// Builds the handler one isolate serves.
 ///
 /// A top-level function, so the server can send it to the isolates that
@@ -73,7 +75,7 @@ Future<HttpServer> _bind(
   required ShelfTls? tls,
 }) => shelf_io.serve(
   builder(),
-  InternetAddress.loopbackIPv4,
+  benchAddress,
   port,
   shared: shared,
   securityContext: tls == null

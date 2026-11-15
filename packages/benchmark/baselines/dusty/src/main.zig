@@ -4,7 +4,8 @@
 //! count, so it compares with that many isolates. With a certificate chain
 //! and a key it serves HTTPS through ztls on AWS-LC, in TLS 1.3 only.
 //! relic_native uses tls.zig. At / it echoes WebSocket messages for the
-//! sweep's WebSocket targets.
+//! sweep's WebSocket targets. It listens on BENCH_ADDRESS, or on the IPv4
+//! loopback when that is unset.
 //!
 //!   zig build run --release -- 8093
 //!   zig build run --release -- 8093 4
@@ -131,7 +132,11 @@ pub fn main(init: std.process.Init) !void {
     const rt = try zio.Runtime.init(init.gpa, .{ .executors = .exact(executors) });
     defer rt.deinit();
 
-    const address: http.Address = .{ .ip = .{ .ip4 = .loopback(port) } };
+    const ip: std.Io.net.IpAddress = if (init.environ_map.get("BENCH_ADDRESS")) |text|
+        try .parseIp4(text, port)
+    else
+        .{ .ip4 = .loopback(port) };
+    const address: http.Address = .{ .ip = ip };
     var server = http.Server(void).init(init.gpa, rt.io(), .{
         .listeners = &.{.{ .address = address, .tls = tls }},
         // The sweep holds 10000 idle WebSockets, dusty's default cap.
@@ -143,6 +148,6 @@ pub fn main(init: std.process.Init) !void {
     server.router.get("/browser", browser);
     server.router.get("/", echo);
 
-    std.debug.print("listening on {s}://127.0.0.1:{d}/\n", .{ if (tls == null) "http" else "https", port });
+    std.debug.print("listening on {s}://{f}/\n", .{ if (tls == null) "http" else "https", ip });
     try server.run();
 }

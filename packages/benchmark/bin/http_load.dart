@@ -30,6 +30,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:benchmark/src/bench_address.dart';
 import 'package:benchmark/src/browser_headers.dart';
 import 'package:benchmark/src/cpu.dart';
 import 'package:benchmark/src/load_app.dart';
@@ -252,7 +253,9 @@ Future<void> main(List<String> args) async {
   for (final spec in targets) {
     final (target, url, _) = _split(spec);
     final server = url == null ? await _start(local[target]!, tls: tls) : null;
-    final base = url ?? '${tls ? 'https' : 'http'}://127.0.0.1:${server!.port}';
+    final base =
+        url ??
+        '${tls ? 'https' : 'http'}://${benchAddress.address}:${server!.port}';
     stderr.writeln('$target at $base');
     final meter = await _meter(base);
     try {

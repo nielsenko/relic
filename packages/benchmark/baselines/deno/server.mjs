@@ -1,14 +1,15 @@
 // The http_load.dart routes on bare Deno.serve, as a floor for the
 // relic_fetch builds that run on the same host. With a certificate chain
-// and a key it serves HTTPS.
+// and a key it serves HTTPS. It listens on BENCH_ADDRESS when set.
 //
-//   deno run --allow-net server.mjs 8092
+//   deno run --allow-net --allow-env=BENCH_ADDRESS server.mjs 8092
 //   dart run bin/http_load.dart --targets=deno=http://127.0.0.1:8092
-//   deno run --allow-net --allow-read server.mjs 8443 \
+//   deno run --allow-net --allow-env=BENCH_ADDRESS --allow-read server.mjs 8443 \
 //       ../../../relic_native/test/certs/localhost_cert.pem \
 //       ../../../relic_native/test/certs/localhost_key.pem
 
 const port = Number(Deno.args[0] ?? 8092);
+const hostname = Deno.env.get('BENCH_ADDRESS') ?? '127.0.0.1';
 if (Deno.args.length === 2) throw new Error('key path missing');
 const tls = Deno.args.length > 2
   ? { cert: Deno.readTextFileSync(Deno.args[1]), key: Deno.readTextFileSync(Deno.args[2]) }
@@ -32,7 +33,7 @@ function cookie(header, name) {
   return null;
 }
 
-Deno.serve({ port, ...tls }, (req) => {
+Deno.serve({ hostname, port, ...tls }, (req) => {
   const path = new URL(req.url).pathname;
   const h = req.headers;
   switch (path) {
