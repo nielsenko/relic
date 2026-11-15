@@ -59,16 +59,37 @@ Future<int?> listeningPid(int port) async {
   return pids.isEmpty || pids.first.isEmpty ? null : int.parse(pids.first);
 }
 
-/// CPU use of one process over a run.
+/// The NAPI threads of network device [device], the kernel threads named
+/// `napi/<device>-<id>` while its NAPI is threaded, or none when there are
+/// none or this is not Linux.
+List<int> napiThreads(String device) {
+  if (!Platform.isLinux) return const [];
+  final prefix = 'napi/$device-';
+  final pids = <int>[];
+  for (final entry in Directory('/proc').listSync()) {
+    final pid = int.tryParse(entry.path.substring('/proc/'.length));
+    if (pid == null) continue;
+    try {
+      if (File('/proc/$pid/comm').readAsStringSync().startsWith(prefix)) {
+        pids.add(pid);
+      }
+    } on FileSystemException {
+      // The process ended between the listing and the read.
+    }
+  }
+  return pids;
+}
+
+/// CPU use of a set of processes together over a run.
 final class CpuMeter {
-  final int pid;
+  final List<int> pids;
   final Stopwatch _wall = Stopwatch();
   double? _start;
 
-  CpuMeter(this.pid);
+  CpuMeter(this.pids);
 
   Future<void> begin() async {
-    _start = await cpuSeconds(pid);
+    _start = await _seconds();
     _wall
       ..reset()
       ..start();
@@ -78,8 +99,19 @@ final class CpuMeter {
   Future<double?> end() async {
     _wall.stop();
     final start = _start;
-    final stop = await cpuSeconds(pid);
+    final stop = await _seconds();
     if (start == null || stop == null) return null;
     return (stop - start) / (_wall.elapsedMicroseconds / 1e6);
+  }
+
+  /// The CPU seconds of all [pids], or null when one cannot be read.
+  Future<double?> _seconds() async {
+    var total = 0.0;
+    for (final pid in pids) {
+      final seconds = await cpuSeconds(pid);
+      if (seconds == null) return null;
+      total += seconds;
+    }
+    return total;
   }
 }

@@ -26,6 +26,11 @@
 //
 // `--tls` serves the local targets over TLS with relic_native's test
 // certificates. oha does not verify an https URL.
+//
+// `--napi-device=vsrv` meters the NAPI threads of network device vsrv
+// beside the server, as the server's share of the network stack, when the
+// server takes its packets from a device with threaded NAPI, such as one
+// end of a veth pair.
 
 import 'dart:convert';
 import 'dart:io';
@@ -80,6 +85,10 @@ final class Measurement {
   /// time could not be read.
   final double? cores;
 
+  /// Cores the NAPI threads of `--napi-device` kept busy on average, or
+  /// null without that option.
+  final double? napiCores;
+
   /// The closed-loop rates whose mean is the saturation rate this run's
   /// [offeredRps] is a fraction of.
   final List<int> saturationRuns;
@@ -96,6 +105,7 @@ final class Measurement {
     required this.errors,
     required this.nonOk,
     required this.cores,
+    required this.napiCores,
     required this.saturationRuns,
   });
 
@@ -111,6 +121,7 @@ final class Measurement {
     'errors': errors,
     'nonOk': nonOk,
     'cores': ?cores,
+    'napiCores': ?napiCores,
     'saturationRuns': saturationRuns,
   };
 }
@@ -194,6 +205,15 @@ enum LoadOption<V> implements OptionDefinition<V> {
     ),
   ),
 
+  napiDevice(
+    StringOption(
+      argName: 'napi-device',
+      helpText:
+          'A network device whose NAPI threads are metered beside the '
+          'server, as its share of the network stack',
+    ),
+  ),
+
   out(
     StringOption(
       argName: 'out',
@@ -235,6 +255,7 @@ Future<void> main(List<String> args) async {
   final saturationRuns = config.value(LoadOption.saturationRuns);
   final ohaThreads = config.value(LoadOption.ohaThreads);
   final tls = config.value(LoadOption.tls);
+  final napiDevice = config.optionalValue(LoadOption.napiDevice);
   final out = config.optionalValue(LoadOption.out);
   // Every local target is read before the first run, so a bad one fails
   // fast.
@@ -258,6 +279,7 @@ Future<void> main(List<String> args) async {
         '${tls ? 'https' : 'http'}://${benchAddress.address}:${server!.port}';
     stderr.writeln('$target at $base');
     final meter = await _meter(base);
+    final napi = napiDevice == null ? null : _napiMeter(napiDevice);
     try {
       // One warm-up so JIT and caches are settled before the first number.
       await _oha(base, workloads.first, connections, 2, null, ohaThreads);
@@ -283,6 +305,7 @@ Future<void> main(List<String> args) async {
         for (final load in loads) {
           final offered = (sat * load).round();
           await meter?.begin();
+          await napi?.begin();
           final run = await _oha(
             base,
             workload,
@@ -292,6 +315,7 @@ Future<void> main(List<String> args) async {
             ohaThreads,
           );
           final cores = await meter?.end();
+          final napiCores = await napi?.end();
           results.add(
             Measurement(
               target: target,
@@ -305,6 +329,7 @@ Future<void> main(List<String> args) async {
               errors: run.failed,
               nonOk: run.nonOk,
               cores: cores,
+              napiCores: napiCores,
               saturationRuns: closedLoop,
             ),
           );
@@ -314,6 +339,7 @@ Future<void> main(List<String> args) async {
             'p99 ${run.p99.toStringAsFixed(2)} ms, '
             'p99.9 ${run.p999.toStringAsFixed(2)} ms'
             '${cores == null ? '' : ', ${cores.toStringAsFixed(2)} cores'}'
+            '${napiCores == null ? '' : ', ${napiCores.toStringAsFixed(2)} napi'}'
             '${run.failed > 0 ? ', ${run.failed} errors' : ''}',
           );
         }
@@ -351,7 +377,18 @@ Future<CpuMeter?> _meter(String base) async {
     stderr.writeln('  no process found on port $port, no cores column');
     return null;
   }
-  return CpuMeter(pid);
+  return CpuMeter([pid]);
+}
+
+/// A CPU meter on the NAPI threads of [device], or null when it has none.
+CpuMeter? _napiMeter(String device) {
+  final pids = napiThreads(device);
+  if (pids.isEmpty) {
+    stderr.writeln('  no NAPI threads of $device, no napi cores column');
+    return null;
+  }
+  stderr.writeln('  ${pids.length} NAPI threads of $device');
+  return CpuMeter(pids);
 }
 
 /// The target name, URL and local kind in [spec].
@@ -433,19 +470,21 @@ String _markdown(
   int saturationRuns,
   int ohaThreads,
 ) {
+  final napi = results.any((m) => m.napiCores != null);
   final buffer = StringBuffer()
     ..writeln(
       '$connections connections from oha on $ohaThreads threads, '
       '${seconds}s per run, saturation the mean of $saturationRuns closed-loop runs, '
       'latency in ms, cores the CPU time the server process used over the '
-      'run divided by its wall time.',
+      'run divided by its wall time'
+      '${napi ? ', napi cores the same for the NAPI threads of its network device' : ''}.',
     )
     ..writeln()
     ..writeln(
       '| target | workload | load | offered rps | rps | p50 | p99 | p99.9 '
-      '| cores | errors |',
+      '| cores |${napi ? ' napi cores |' : ''} errors |',
     )
-    ..writeln('|---|---|---|---|---|---|---|---|---|---|');
+    ..writeln('|---|---|---|---|---|---|---|---|---|${napi ? '---|' : ''}---|');
   for (final m in results) {
     final errors = m.errors > 0 || m.nonOk > 0
         ? '${m.errors} failed, ${m.nonOk} non-200'
@@ -454,7 +493,8 @@ String _markdown(
       '| ${m.target} | ${m.workload} | ${(m.load * 100).round()}% | '
       '${m.offeredRps} | ${m.rps.round()} | ${m.p50.toStringAsFixed(2)} | '
       '${m.p99.toStringAsFixed(2)} | ${m.p999.toStringAsFixed(2)} | '
-      '${m.cores?.toStringAsFixed(2) ?? '-'} | $errors |',
+      '${m.cores?.toStringAsFixed(2) ?? '-'} | '
+      '${napi ? '${m.napiCores?.toStringAsFixed(2) ?? '-'} | ' : ''}$errors |',
     );
   }
   return buffer.toString();
