@@ -18,8 +18,9 @@
 // that serves the same paths, and `name=URL` labels it in the table, as
 // `name=kind` labels a server started here:
 //   --targets=relic-io=io,bun=http://127.0.0.1:3000
-// `baselines/` has the same routes on bare hyper, on bare Deno.serve and
-// on dusty, a Zig server on the zio relic_native runs on.
+// `baselines/` has the same routes on bare hyper, on bare Deno.serve, on
+// bare Bun.serve and on dusty, a Zig server on the zio relic_native runs
+// on.
 //
 // `--oha-threads=N` sizes oha's tokio pool, 4 by default, so a server of
 // four isolates and the load tool together stay within eight cores.
