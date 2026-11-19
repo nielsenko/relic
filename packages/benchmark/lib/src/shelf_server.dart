@@ -9,6 +9,7 @@ import 'package:shelf_router/shelf_router.dart';
 import 'package:shelf_web_socket/shelf_web_socket.dart';
 
 import 'bench_address.dart';
+import 'db.dart';
 
 /// Builds the handler one isolate serves.
 ///
@@ -159,6 +160,10 @@ Handler shelfLoad() {
         ..get('/async', (Request req) async => Response.ok('Hello, World!'))
         ..get('/timer', (Request req) async {
           await Future<void>.delayed(const Duration(milliseconds: 1));
+          return Response.ok('Hello, World!');
+        })
+        ..get('/db', (Request req) async {
+          await selectOne();
           return Response.ok('Hello, World!');
         }))
       .call;
