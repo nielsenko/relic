@@ -13,6 +13,7 @@ import 'package:benchmark/src/commands/gcp.dart';
 import 'package:benchmark/src/commands/kernel.dart';
 import 'package:benchmark/src/commands/kernel_report.dart';
 import 'package:benchmark/src/commands/notes.dart';
+import 'package:benchmark/src/commands/plot.dart';
 import 'package:benchmark/src/commands/report.dart';
 import 'package:benchmark/src/commands/sweep.dart';
 import 'package:cli_tools/cli_tools.dart';
@@ -44,6 +45,7 @@ Future<void> main(List<String> args) async {
         MergeCommand(),
         NotesCommand(_logger),
         PerfSymbolsCommand(),
+        PlotCommand(),
         ReportCommand(),
         SweepCommand(),
         ThreadsCommand(),
