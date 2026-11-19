@@ -42,6 +42,13 @@ RelicApp loadApp() {
         await Future<void>.delayed(const Duration(milliseconds: 50));
       }
       return Response.ok(body: hello());
+    })
+    // The plaintext answer from an async handler.
+    ..get('/async', (req) async => Response.ok(body: hello()))
+    // Every request waits on a 1 ms timer, as on a reply from elsewhere.
+    ..get('/timer', (req) async {
+      await Future<void>.delayed(const Duration(milliseconds: 1));
+      return Response.ok(body: hello());
     });
 }
 

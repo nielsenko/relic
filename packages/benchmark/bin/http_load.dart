@@ -76,6 +76,8 @@ final _workloads = [
   Workload('read-string', '/read-string', _jsonBody, readDocument),
   const Workload('alloc', '/alloc'),
   const Workload('mixed', '/mixed'),
+  const Workload('async', '/async'),
+  const Workload('timer', '/timer'),
 ];
 
 final class Measurement {
