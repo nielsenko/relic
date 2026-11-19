@@ -5,8 +5,6 @@ publish_to: none
 environment:
   sdk: ^3.10.0
 
-resolution: workspace
-
 dependencies:
   benchmark_harness: ^2.3.1
   cli_tools: ">=0.11.0 <0.15.0"
@@ -14,8 +12,10 @@ dependencies:
   ffi: ^2.1.0
   git: ^2.2.1
   path: ^1.9.0
-  relic: ^2.0.0
-  relic_native: ^2.0.0
+  relic:
+    path: ../relic
+  relic_native:
+    path: ../relic_native
   routingkit: ^5.1.2
   shelf: ^1.4.2
   shelf_router: ^1.1.4
@@ -24,3 +24,16 @@ dependencies:
   stream_channel: ^2.1.1
   vm_service: ^15.0.0
   web_socket: ^1.0.1
+
+dev_dependencies:
+  serverpod_lints: ">=3.0.0 <5.0.0"
+
+# The relic packages of this tree for the ones relic and relic_native
+# bring in.
+dependency_overrides:
+  relic_core:
+    path: ../relic_core
+  relic_headers:
+    path: ../relic_headers
+  relic_io:
+    path: ../relic_io
