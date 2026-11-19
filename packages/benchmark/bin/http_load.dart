@@ -32,12 +32,20 @@
 // beside the server, as the server's share of the network stack, when the
 // server takes its packets from a device with threaded NAPI, such as one
 // end of a veth pair.
+//
+// Where the machine has hardware counters, every run also reads the
+// instructions retired and the CPU cycles of the server process, and the
+// table gives them per request. macOS always has them. Linux needs a PMU,
+// which a GCP instance has when created with PMU=standard, and
+// kernel.perf_event_paranoid at 2 or below, at 1 or below for the kernel
+// share. The NAPI threads are not counted.
 
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:benchmark/src/bench_address.dart';
 import 'package:benchmark/src/browser_headers.dart';
+import 'package:benchmark/src/counters.dart';
 import 'package:benchmark/src/cpu.dart';
 import 'package:benchmark/src/load_app.dart';
 import 'package:benchmark/src/oha.dart';
@@ -94,6 +102,17 @@ final class Measurement {
   /// [offeredRps] is a fraction of.
   final List<int> saturationRuns;
 
+  /// The coefficient of variation of [saturationRuns].
+  final double saturationCv;
+
+  /// Instructions the server spent per request in each of the closed-loop
+  /// runs, or empty without hardware counters.
+  final List<double> saturationInstructions;
+
+  /// Instructions and cycles the server spent per request over this run, or
+  /// null without hardware counters.
+  final CounterUse? counters;
+
   Measurement({
     required this.target,
     required this.workload,
@@ -108,6 +127,9 @@ final class Measurement {
     required this.cores,
     required this.napiCores,
     required this.saturationRuns,
+    required this.saturationCv,
+    required this.saturationInstructions,
+    required this.counters,
   });
 
   Map<String, Object> toJson() => {
@@ -124,6 +146,10 @@ final class Measurement {
     'cores': ?cores,
     'napiCores': ?napiCores,
     'saturationRuns': saturationRuns,
+    'saturationCv': saturationCv,
+    if (saturationInstructions.isNotEmpty)
+      'saturationInstructionsPerRequest': saturationInstructions,
+    ...?counters?.toJson(),
   };
 }
 
@@ -280,13 +306,16 @@ Future<void> main(List<String> args) async {
         '${tls ? 'https' : 'http'}://${benchAddress.address}:${server!.port}';
     stderr.writeln('$target at $base');
     final meter = await _meter(base);
+    final counters = meter == null ? null : CounterMeter.open(meter.pids);
     final napi = napiDevice == null ? null : _napiMeter(napiDevice);
     try {
       // One warm-up so JIT and caches are settled before the first number.
       await _oha(base, workloads.first, connections, 2, null, ohaThreads);
       for (final workload in workloads) {
         final closedLoop = <int>[];
+        final closedLoopInstructions = <double>[];
         for (var run = 0; run < saturationRuns; run++) {
+          counters?.begin();
           final saturation = await _oha(
             base,
             workload,
@@ -295,18 +324,25 @@ Future<void> main(List<String> args) async {
             null,
             ohaThreads,
           );
+          final use = counters?.end(saturation.responses);
           closedLoop.add(saturation.rps.round());
+          if (use != null) closedLoopInstructions.add(use.instructions);
         }
-        final sat = (closedLoop.reduce((a, b) => a + b) / closedLoop.length)
-            .round();
+        final rates = spread([for (final rps in closedLoop) rps.toDouble()]);
+        final sat = rates.mean.round();
+        final instructions = closedLoopInstructions.isEmpty
+            ? null
+            : spread(closedLoopInstructions);
         stderr.writeln(
-          '  ${workload.name}: saturates at $sat rps, '
-          'runs ${closedLoop.join(' ')}',
+          '  ${workload.name}: saturates at $sat rps '
+          '(cv ${_percent(rates.cv)}), runs ${closedLoop.join(' ')}'
+          '${instructions == null ? '' : ', ${_thousands(instructions.mean)} k instructions per request (cv ${_percent(instructions.cv)})'}',
         );
         for (final load in loads) {
           final offered = (sat * load).round();
           await meter?.begin();
           await napi?.begin();
+          counters?.begin();
           final run = await _oha(
             base,
             workload,
@@ -315,6 +351,7 @@ Future<void> main(List<String> args) async {
             offered,
             ohaThreads,
           );
+          final use = counters?.end(run.responses);
           final cores = await meter?.end();
           final napiCores = await napi?.end();
           results.add(
@@ -332,6 +369,9 @@ Future<void> main(List<String> args) async {
               cores: cores,
               napiCores: napiCores,
               saturationRuns: closedLoop,
+              saturationCv: rates.cv,
+              saturationInstructions: closedLoopInstructions,
+              counters: use,
             ),
           );
           stderr.writeln(
@@ -341,11 +381,13 @@ Future<void> main(List<String> args) async {
             'p99.9 ${run.p999.toStringAsFixed(2)} ms'
             '${cores == null ? '' : ', ${cores.toStringAsFixed(2)} cores'}'
             '${napiCores == null ? '' : ', ${napiCores.toStringAsFixed(2)} napi'}'
+            '${use == null ? '' : ', ${_thousands(use.instructions)} k instructions'}'
             '${run.failed > 0 ? ', ${run.failed} errors' : ''}',
           );
         }
       }
     } finally {
+      counters?.close();
       await server?.close();
     }
   }
@@ -367,6 +409,11 @@ Future<void> main(List<String> args) async {
     );
   }
 }
+
+String _percent(double fraction) => '${(fraction * 100).toStringAsFixed(2)}%';
+
+/// [count] in thousands, to one decimal.
+String _thousands(double count) => (count / 1000).toStringAsFixed(1);
 
 /// A CPU meter on the process listening at [base], or null when none is
 /// found. The server is in this process for the local targets, and whoever
@@ -472,20 +519,29 @@ String _markdown(
   int ohaThreads,
 ) {
   final napi = results.any((m) => m.napiCores != null);
+  final counted = results.any((m) => m.counters != null);
+  final kernel = results.any((m) => m.counters?.kernelInstructions != null);
   final buffer = StringBuffer()
     ..writeln(
       '$connections connections from oha on $ohaThreads threads, '
       '${seconds}s per run, saturation the mean of $saturationRuns closed-loop runs, '
       'latency in ms, cores the CPU time the server process used over the '
       'run divided by its wall time'
-      '${napi ? ', napi cores the same for the NAPI threads of its network device' : ''}.',
+      '${napi ? ', napi cores the same for the NAPI threads of its network device' : ''}'
+      '${counted ? ', k instr and k cycles the thousands of instructions and CPU cycles the server process spent per request' : ''}'
+      '${kernel ? ', kernel the share of those instructions spent in kernel mode' : ''}.',
     )
     ..writeln()
     ..writeln(
       '| target | workload | load | offered rps | rps | p50 | p99 | p99.9 '
-      '| cores |${napi ? ' napi cores |' : ''} errors |',
+      '| cores |${napi ? ' napi cores |' : ''}'
+      '${counted ? ' k instr | k cycles |' : ''}${kernel ? ' kernel |' : ''} '
+      'errors |',
     )
-    ..writeln('|---|---|---|---|---|---|---|---|---|${napi ? '---|' : ''}---|');
+    ..writeln(
+      '|---|---|---|---|---|---|---|---|---|${napi ? '---|' : ''}'
+      '${counted ? '---|---|' : ''}${kernel ? '---|' : ''}---|',
+    );
   for (final m in results) {
     final errors = m.errors > 0 || m.nonOk > 0
         ? '${m.errors} failed, ${m.nonOk} non-200'
@@ -495,8 +551,25 @@ String _markdown(
       '${m.offeredRps} | ${m.rps.round()} | ${m.p50.toStringAsFixed(2)} | '
       '${m.p99.toStringAsFixed(2)} | ${m.p999.toStringAsFixed(2)} | '
       '${m.cores?.toStringAsFixed(2) ?? '-'} | '
-      '${napi ? '${m.napiCores?.toStringAsFixed(2) ?? '-'} | ' : ''}$errors |',
+      '${napi ? '${m.napiCores?.toStringAsFixed(2) ?? '-'} | ' : ''}'
+      '${counted ? '${_counterCells(m.counters, kernel: kernel)} | ' : ''}'
+      '$errors |',
     );
   }
   return buffer.toString();
+}
+
+/// The k instr and k cycles cells of a row, and its kernel cell when the
+/// table has one.
+String _counterCells(CounterUse? use, {required bool kernel}) {
+  if (use == null) return kernel ? '- | - | -' : '- | -';
+  final kernelInstructions = use.kernelInstructions;
+  return [
+    _thousands(use.instructions),
+    _thousands(use.cycles),
+    if (kernel)
+      kernelInstructions == null
+          ? '-'
+          : '${(kernelInstructions / use.instructions * 100).round()}%',
+  ].join(' | ');
 }
