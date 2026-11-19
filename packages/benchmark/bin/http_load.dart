@@ -31,7 +31,7 @@
 // `--napi-device=vsrv` meters the NAPI threads of network device vsrv
 // beside the server, as the server's share of the network stack, when the
 // server takes its packets from a device with threaded NAPI, such as one
-// end of a veth pair.
+// end of a veth pair. `bench sweep --net=veth` sets one up.
 //
 // Where the machine has hardware counters, every run also reads the
 // instructions retired and the CPU cycles of the server process, and the
