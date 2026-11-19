@@ -9,6 +9,7 @@
 import 'dart:io';
 
 import 'package:args/command_runner.dart';
+import 'package:benchmark/src/commands/kernel_report.dart';
 import 'package:benchmark/src/commands/notes.dart';
 import 'package:benchmark/src/commands/report.dart';
 import 'package:cli_tools/cli_tools.dart';
@@ -28,11 +29,19 @@ void _setLogLevel({
 
 Future<void> main(List<String> args) async {
   // ignore: inference_failure_on_instance_creation
-  final runner = BetterCommandRunner(
-    'bench',
-    'Relic benchmark tools',
-    setLogLevel: _setLogLevel,
-  )..addCommands([MergeCommand(), NotesCommand(_logger), ReportCommand()]);
+  final runner =
+      BetterCommandRunner(
+        'bench',
+        'Relic benchmark tools',
+        setLogLevel: _setLogLevel,
+      )..addCommands([
+        KernelReportCommand(),
+        MergeCommand(),
+        NotesCommand(_logger),
+        PerfSymbolsCommand(),
+        ReportCommand(),
+        ThreadsCommand(),
+      ]);
   try {
     await runner.run(args);
   } on UsageException catch (e) {
