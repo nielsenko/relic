@@ -12,6 +12,7 @@ import 'package:args/command_runner.dart';
 import 'package:benchmark/src/commands/kernel_report.dart';
 import 'package:benchmark/src/commands/notes.dart';
 import 'package:benchmark/src/commands/report.dart';
+import 'package:benchmark/src/commands/sweep.dart';
 import 'package:cli_tools/cli_tools.dart';
 
 final _logger = StdOutLogger(LogLevel.info);
@@ -40,6 +41,7 @@ Future<void> main(List<String> args) async {
         NotesCommand(_logger),
         PerfSymbolsCommand(),
         ReportCommand(),
+        SweepCommand(),
         ThreadsCommand(),
       ]);
   try {

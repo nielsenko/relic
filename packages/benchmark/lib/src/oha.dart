@@ -30,6 +30,17 @@ final class OhaResult {
   });
 }
 
+/// The command that runs oha: `BENCH_OHA`, a JSON list, when it is set, and
+/// the oha of the PATH otherwise.
+///
+/// A sweep over a veth pair sets it, so that oha runs in the network
+/// namespace of the load tools while this process runs in the servers'.
+List<String> ohaCommand() {
+  final configured = Platform.environment['BENCH_OHA'];
+  if (configured == null || configured.isEmpty) return const ['oha'];
+  return (jsonDecode(configured) as List<dynamic>).cast<String>();
+}
+
 /// One oha run against [url] for [seconds].
 ///
 /// A null [rate] is a closed loop at [connections] in flight, otherwise an
@@ -51,7 +62,9 @@ Future<OhaResult> runOha(
   String? body,
   int? workerThreads,
 }) async {
-  final result = await Process.run('oha', [
+  final oha = ohaCommand();
+  final result = await Process.run(oha.first, [
+    ...oha.sublist(1),
     '--no-tui',
     '--output-format',
     'json',
