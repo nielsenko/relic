@@ -11,6 +11,7 @@
 //
 // `shelf` is a shelf server on dart:io with the same routes, for
 // comparison.
+import 'package:benchmark/src/db.dart';
 import 'package:benchmark/src/load_app.dart';
 import 'package:benchmark/src/serve.dart';
 import 'package:benchmark/src/shelf_server.dart';
@@ -32,4 +33,6 @@ Future<void> main(List<String> args) async {
     tls: tls,
   );
   await serveUntilSigterm(server);
+  // The pool of a one-isolate server would keep the isolate alive.
+  await dbPool.close();
 }

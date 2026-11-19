@@ -78,6 +78,7 @@ final _workloads = [
   const Workload('mixed', '/mixed'),
   const Workload('async', '/async'),
   const Workload('timer', '/timer'),
+  const Workload('db', '/db'),
 ];
 
 final class Measurement {

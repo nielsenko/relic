@@ -4,6 +4,8 @@ import 'dart:typed_data';
 
 import 'package:relic/relic.dart';
 
+import 'db.dart';
+
 /// The routes of bin/http_load.dart, so bin/load_serve.dart can serve them
 /// on their own for a profiler or a load tool started elsewhere.
 RelicApp loadApp() {
@@ -48,6 +50,11 @@ RelicApp loadApp() {
     // Every request waits on a 1 ms timer, as on a reply from elsewhere.
     ..get('/timer', (req) async {
       await Future<void>.delayed(const Duration(milliseconds: 1));
+      return Response.ok(body: hello());
+    })
+    // Every request runs SELECT 1 on a postgres pool, see db.dart.
+    ..get('/db', (req) async {
+      await selectOne();
       return Response.ok(body: hello());
     });
 }
