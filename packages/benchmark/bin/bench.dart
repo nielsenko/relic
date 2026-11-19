@@ -10,6 +10,7 @@ import 'dart:io';
 
 import 'package:args/command_runner.dart';
 import 'package:benchmark/src/commands/notes.dart';
+import 'package:benchmark/src/commands/report.dart';
 import 'package:cli_tools/cli_tools.dart';
 
 final _logger = StdOutLogger(LogLevel.info);
@@ -31,7 +32,7 @@ Future<void> main(List<String> args) async {
     'bench',
     'Relic benchmark tools',
     setLogLevel: _setLogLevel,
-  )..addCommand(NotesCommand(_logger));
+  )..addCommands([MergeCommand(), NotesCommand(_logger), ReportCommand()]);
   try {
     await runner.run(args);
   } on UsageException catch (e) {
