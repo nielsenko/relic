@@ -1,6 +1,10 @@
 // Starts a server command, drives it with oha, and reports the server's
 // CPU time per request as user and system time, read from the kernel's
-// per-process counters over the load window. Needs `oha` on the PATH.
+// per-process counters over the load window, and the instructions and
+// cycles retired per request in thousands, which do not move with the
+// machine's load the way time does. macOS always counts them. Linux needs
+// a PMU and kernel.perf_event_paranoid at 2 or below, at 1 or below to
+// count kernel mode with user mode. Needs `oha` on the PATH.
 //
 //   dart run bin/cpu_bench.dart -- dart run bin/load_serve.dart native 1
 //   dart run bin/cpu_bench.dart --connections=64 --seconds=10 -- ./hello 4
@@ -14,6 +18,7 @@ import 'dart:ffi';
 import 'dart:io';
 
 import 'package:benchmark/src/browser_headers.dart';
+import 'package:benchmark/src/counters.dart';
 import 'package:benchmark/src/oha.dart';
 import 'package:benchmark/src/options.dart';
 import 'package:config/config.dart';
@@ -103,18 +108,22 @@ Future<void> main(List<String> args) async {
   unawaited(server.stdout.drain<void>());
   unawaited(server.stderr.drain<void>());
   var pids = [server.pid];
+  CounterMeter? counters;
   try {
     await _waitForServer(url);
     await Future<void>.delayed(const Duration(seconds: 1));
     pids = await _processTree(server.pid);
+    counters = CounterMeter.open(pids);
     await runOha(url, connections: connections, seconds: 2, headers: headers);
     final before = await _cpuTime(pids);
+    counters?.begin();
     final result = await runOha(
       url,
       connections: connections,
       seconds: seconds,
       headers: headers,
     );
+    final use = counters?.end(result.responses);
     final after = await _cpuTime(pids);
     final user = (after.user - before.user) / 1e9;
     final system = (after.system - before.system) / 1e9;
@@ -125,9 +134,12 @@ Future<void> main(List<String> args) async {
       '${((user + system) / seconds * 100).round()}% | '
       '${(user / count * 1e6).toStringAsFixed(1)} | '
       '${(system / count * 1e6).toStringAsFixed(1)} | '
-      '${((user + system) / count * 1e6).toStringAsFixed(1)} |',
+      '${((user + system) / count * 1e6).toStringAsFixed(1)} | '
+      '${use == null ? '-' : (use.instructions / 1e3).toStringAsFixed(1)} | '
+      '${use == null ? '-' : (use.cycles / 1e3).toStringAsFixed(1)} |',
     );
   } finally {
+    counters?.close();
     // A shim that exits after spawning the server leaves the server holding
     // the port and this process's pipes, so the whole tree goes.
     for (final pid in pids) {
@@ -187,8 +199,10 @@ Future<bool> _answers(String url) async {
   }
 }
 
+typedef _Usage = ({int user, int system});
+
 /// User and system CPU time in nanoseconds, summed over [pids].
-Future<({int user, int system})> _cpuTime(List<int> pids) async {
+Future<_Usage> _cpuTime(List<int> pids) async {
   var user = 0;
   var system = 0;
   for (final pid in pids) {
@@ -203,16 +217,17 @@ typedef _ProcPidRusageC = Int32 Function(Int32, Int32, Pointer<Uint8>);
 typedef _ProcPidRusage = int Function(int, int, Pointer<Uint8>);
 
 /// The user and system times of [pid] from `proc_pid_rusage` with
-/// `RUSAGE_INFO_V0`.
+/// `RUSAGE_INFO_V4`.
 ///
-/// The struct is a 16 byte uuid, then the user and system times in Mach
-/// absolute time units, nanoseconds on Intel and scaled on Apple silicon.
-({int user, int system}) _rusageMacOS(int pid) {
+/// The struct is a 16 byte uuid, then 64-bit words: the user and system
+/// times in Mach absolute time units, nanoseconds on Intel and scaled on
+/// Apple silicon, come first (`struct rusage_info_v4`, sys/resource.h).
+_Usage _rusageMacOS(int pid) {
   final rusage = DynamicLibrary.process()
       .lookupFunction<_ProcPidRusageC, _ProcPidRusage>('proc_pid_rusage');
-  final buffer = calloc<Uint8>(256);
+  final buffer = calloc<Uint8>(512);
   try {
-    if (rusage(pid, 0, buffer) != 0) {
+    if (rusage(pid, 4, buffer) != 0) {
       // A shim in the tree that has exited since the tree was taken.
       stderr.writeln('proc_pid_rusage failed for pid $pid, counted as 0');
       return (user: 0, system: 0);
@@ -247,7 +262,7 @@ double _machTimebase() {
 
 /// The user and system times of [pid], fields 14 and 15 of
 /// `/proc/<pid>/stat`, converted from clock ticks to nanoseconds.
-Future<({int user, int system})> _statLinux(int pid) async {
+Future<_Usage> _statLinux(int pid) async {
   final stat = await File('/proc/$pid/stat').readAsString();
   // The command name is in parentheses and may hold spaces.
   final fields = stat.substring(stat.lastIndexOf(')') + 2).split(' ');
