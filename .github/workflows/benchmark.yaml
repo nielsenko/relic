@@ -60,13 +60,14 @@ jobs:
         working-directory: packages/benchmark
         run: dart analyze --fatal-warnings
 
-      # `dart compile exe` refuses a package graph with build hooks.
+      # bench_press builds a `dart build cli` bundle of each benchmark file,
+      # since relic_native has a build hook.
       - name: Run Benchmark
         id: run-benchmark
         working-directory: packages/benchmark
         run: |
-          dart build cli --target bin/benchmark.dart
-          ./build/cli/linux_x64/bundle/bin/benchmark run --store-in-git-notes --verbose
+          dart run bench_press run -t aot --save "$RUNNER_TEMP/benchmark_results.json" benchmark/
+          dart run bin/bench.dart notes store "$RUNNER_TEMP/benchmark_results.json" --verbose
 
       - name: Push Benchmark Data
         # This step runs only if the pull request is NOT from a fork.

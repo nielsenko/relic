@@ -37,7 +37,12 @@ final class BenchmarkExchange implements AdapterExchange {
     'accept': ['*/*'],
   });
 
+  /// Called when the handler has answered.
+  final void Function()? onRespond;
+
   Response? response;
+
+  BenchmarkExchange({this.onRespond});
 
   @override
   HttpProtocol get protocol => HttpProtocol.http11;
@@ -49,6 +54,7 @@ final class BenchmarkExchange implements AdapterExchange {
   @override
   FutureOr<void> respond(Response response) {
     this.response = response;
+    onRespond?.call();
     return null;
   }
 
