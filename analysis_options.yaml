@@ -2,6 +2,8 @@ include: package:serverpod_lints/public.yaml
 
 analyzer:
   exclude:
+    # Outside the pub workspace. Analyzed from its own directory.
+    - packages/benchmark/**
     - doc/site/versioned_docs/**
     - doc/site/docs/_example/**
   language:

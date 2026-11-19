@@ -47,8 +47,14 @@ jobs:
         with:
           version: 0.17.1
 
+      # The benchmark package is outside the pub workspace.
       - name: Install Dependencies
+        working-directory: packages/benchmark
         run: dart pub get
+
+      - name: Analyze
+        working-directory: packages/benchmark
+        run: dart analyze --fatal-warnings
 
       # `dart compile exe` refuses a package graph with build hooks.
       - name: Run Benchmark

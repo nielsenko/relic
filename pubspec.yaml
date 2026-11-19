@@ -12,7 +12,6 @@ workspace:
   - packages/relic_native
   - packages/relic_dst
   # Internal support packages (not published)
-  - packages/benchmark
   - packages/examples
   - packages/test_utils
 
@@ -24,6 +23,9 @@ dev_dependencies:
 melos:
   packages:
     - packages/*
+  # The benchmark package resolves on its own.
+  ignore:
+    - packages/benchmark
 
   scripts:
     test:
