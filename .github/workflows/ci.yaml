@@ -43,8 +43,12 @@ jobs:
       - name: Install Dependencies
         run: dart pub get
 
+      # packages/benchmark is outside the workspace on a later language
+      # version, which formats differently. benchmark.yaml checks it.
       - name: Verify Formatting
-        run: dart format --output=none --set-exit-if-changed .
+        run: >-
+          dart format --output=none --set-exit-if-changed
+          $(git ls-files '*.dart' ':!:packages/benchmark')
 
       - name: Analyze (downgraded)
         run: >-
