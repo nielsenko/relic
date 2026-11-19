@@ -114,6 +114,19 @@ enum SweepOption<V> implements OptionDefinition<V> {
       defaultsTo: '',
     ),
   ),
+  variants(
+    StringOption(
+      argName: 'variants',
+      envName: 'VARIANTS',
+      helpText:
+          'Runs every Dart target once per variant of this repository, on '
+          'the dart of PATH, from <label>=<patch file> pairs separated by '
+          'spaces, where an empty patch is the repository as it is. Each '
+          'variant gets a copy of the repository beside this one and its '
+          'results in <out>/variant-<label>. Not together with --dart-sdks',
+      defaultsTo: '',
+    ),
+  ),
   requirePmu(
     IntOption(
       argName: 'require-pmu',
@@ -208,6 +221,9 @@ final class SweepCommand extends BetterCommand<SweepOption<dynamic>, void> {
         vethQueues: commandConfig.optionalValue(SweepOption.vethQueues),
         dartSdks: SweepSettings.parseSdks(
           commandConfig.value(SweepOption.dartSdks),
+        ),
+        variants: SweepSettings.parseSdks(
+          commandConfig.value(SweepOption.variants),
         ),
         ohaThreads: ohaThreads,
         requirePmu: commandConfig.value(SweepOption.requirePmu) == 1,

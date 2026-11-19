@@ -41,6 +41,11 @@ final class SweepSettings {
   /// them once on the dart of PATH.
   final Map<String, String> dartSdks;
 
+  /// The variants of this repository every Dart target runs on, each a
+  /// patch file by label, in order. An empty patch is the repository as it
+  /// is. Not together with [dartSdks].
+  final Map<String, String> variants;
+
   /// Worker threads of oha and of the WebSocket load client.
   final int ohaThreads;
 
@@ -63,6 +68,7 @@ final class SweepSettings {
     required this.net,
     required this.vethQueues,
     required this.dartSdks,
+    required this.variants,
     required this.ohaThreads,
     this.requirePmu = false,
     required this.wsConnections,
@@ -71,8 +77,8 @@ final class SweepSettings {
     required this.wsIdle,
   });
 
-  /// `<label>=<sdk directory>` pairs separated by spaces, as DART_SDKS
-  /// lists them.
+  /// `<label>=<value>` pairs separated by spaces, as DART_SDKS lists SDK
+  /// directories and VARIANTS lists patch files.
   static Map<String, String> parseSdks(String pairs) => {
     for (final pair in pairs.split(RegExp(r'\s+')))
       if (pair.contains('='))
@@ -82,10 +88,16 @@ final class SweepSettings {
   };
 }
 
-/// A Dart SDK the Dart targets run on.
+/// A Dart SDK, or a variant of this repository, the Dart targets run on.
 final class Sdk {
-  /// Its label, empty for the dart of PATH.
+  /// Its label, empty for the dart of PATH on the repository as it is.
   final String label;
+
+  /// `dart` for an SDK and `variant` for a patched repository.
+  final String kind;
+
+  /// The patch its copy of the repository takes, empty for none.
+  final String patch;
 
   /// Its copy of this package.
   final String package;
@@ -96,10 +108,18 @@ final class Sdk {
   /// The environment of what runs on it, its dart first in PATH.
   final Map<String, String> environment;
 
-  Sdk(this.label, this.package, this.out, this.environment);
+  Sdk(
+    this.label,
+    this.package,
+    this.out,
+    this.environment, {
+    this.kind = 'dart',
+    this.patch = '',
+  });
 
-  /// ` dart-<label>` after a target's name in the progress log.
-  String get suffix => label.isEmpty ? '' : ' dart-$label';
+  /// ` dart-<label>` or ` variant-<label>` after a target's name in the
+  /// progress log.
+  String get suffix => label.isEmpty ? '' : ' $kind-$label';
 }
 
 /// The machine's one-minute load average.
@@ -149,6 +169,12 @@ List<String> selfCommand(List<String> arguments) {
 /// resolves the packages and the others take its lock files. Its results
 /// go to `<out>/dart-<label>`. A target that is not Dart runs once, with
 /// its results in the output directory.
+///
+/// With [SweepSettings.variants] every Dart target runs once per variant
+/// of this repository, on the dart of PATH, to compare changes to Relic.
+/// Each variant gets a copy of the repository,
+/// `<repository>-variant-<label>`, with its patch applied, and its results
+/// go to `<out>/variant-<label>`.
 final class Sweep {
   final SweepSettings settings;
 
@@ -204,6 +230,10 @@ final class Sweep {
         _log('no veth path, see ${p.join(_out, 'net.txt')}');
         return 1;
       }
+      if (settings.dartSdks.isNotEmpty && settings.variants.isNotEmpty) {
+        _log('DART_SDKS and VARIANTS cannot be combined');
+        return 1;
+      }
       _cores = await cpuCount();
       _sdks = _selectSdks();
       final (pmu, why) = _probePmu();
@@ -212,7 +242,7 @@ final class Sweep {
         _log('no hardware counters: $why');
         return 1;
       }
-      await _prepareSdks();
+      if (!await _prepareSdks()) return 1;
       _progress.writeAsStringSync(
         'start ${DateTime.now()}\n',
         mode: FileMode.append,
@@ -245,10 +275,24 @@ final class Sweep {
     final base = {...Platform.environment, 'RELIC_TEST_CERTS': certs};
     final oha = net.ohaCommand(base);
     if (oha != null) base['BENCH_OHA'] = oha;
+    final repository = p.normalize(p.join(package, '..', '..'));
+    if (settings.variants.isNotEmpty) {
+      return [
+        for (final MapEntry(key: label, value: patch)
+            in settings.variants.entries)
+          Sdk(
+            label,
+            p.join('$repository-variant-$label', 'packages', 'benchmark'),
+            Directory(p.join(_out, 'variant-$label')),
+            base,
+            kind: 'variant',
+            patch: patch,
+          ),
+      ];
+    }
     if (settings.dartSdks.isEmpty) {
       return [Sdk('', package, settings.out, base)];
     }
-    final repository = p.normalize(p.join(package, '..', '..'));
     return [
       for (final MapEntry(key: label, value: sdk) in settings.dartSdks.entries)
         Sdk(
@@ -313,6 +357,7 @@ final class Sweep {
         mergeStderr: true,
       );
       lines.add('dart${sdk.label.isEmpty ? '' : ' ${sdk.label}'}: $dart');
+      if (sdk.patch.isNotEmpty) lines.add('patch ${sdk.label}: ${sdk.patch}');
     }
     final paranoid = File('/proc/sys/kernel/perf_event_paranoid');
     lines
@@ -339,16 +384,19 @@ final class Sweep {
     ).writeAsStringSync(lines.map((l) => '$l\n').join());
   }
 
-  /// Copies the repository for every SDK but the dart of PATH, resolves its
-  /// packages, and builds the AOT bundle and the hooks of `dart run` on
-  /// each.
-  Future<void> _prepareSdks() async {
+  /// Copies the repository for every SDK but the dart of PATH and for every
+  /// variant, patches a variant's copy, resolves the packages, and builds
+  /// the AOT bundle and the hooks of `dart run` on each. Returns false when
+  /// a patch does not apply.
+  Future<bool> _prepareSdks() async {
     final repository = p.normalize(p.join(package, '..', '..'));
     for (final (i, sdk) in _sdks.indexed) {
       sdk.out.createSync(recursive: true);
       File log(String name) => File(p.join(sdk.out.path, name));
       if (sdk.package != package) {
-        final from = i > 0
+        // The SDKs after the first take the first one's lock files. A
+        // variant starts from the repository as it is.
+        final from = i > 0 && sdk.kind == 'dart'
             ? p.normalize(p.join(_sdks.first.package, '..', '..'))
             : repository;
         final copy = p.normalize(p.join(sdk.package, '..', '..'));
@@ -371,6 +419,19 @@ final class Sweep {
           '$from/',
           '$copy/',
         ], stdoutFile: log('rsync.log'));
+        if (sdk.patch.isNotEmpty &&
+            await runLogged(
+                  ['git', 'apply', sdk.patch],
+                  stdoutFile: log('patch.log'),
+                  workingDirectory: copy,
+                ) !=
+                0) {
+          _log(
+            'variant ${sdk.label}: patch does not apply, see '
+            '${log('patch.log').path}',
+          );
+          return false;
+        }
         await runLogged(
           ['dart', 'pub', 'get'],
           stdoutFile: log('pub.log'),
@@ -399,6 +460,7 @@ final class Sweep {
         workingDirectory: p.join(sdk.package, 'baselines', 'relic_1_2'),
       );
     }
+    return true;
   }
 
   bool _wanted(String name) {
