@@ -155,6 +155,11 @@ Handler shelfLoad() {
             await Future<void>.delayed(const Duration(milliseconds: 50));
           }
           return Response.ok('Hello, World!');
+        })
+        ..get('/async', (Request req) async => Response.ok('Hello, World!'))
+        ..get('/timer', (Request req) async {
+          await Future<void>.delayed(const Duration(milliseconds: 1));
+          return Response.ok('Hello, World!');
         }))
       .call;
 }
