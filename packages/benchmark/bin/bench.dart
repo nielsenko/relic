@@ -9,6 +9,7 @@
 import 'dart:io';
 
 import 'package:args/command_runner.dart';
+import 'package:benchmark/src/commands/gcp.dart';
 import 'package:benchmark/src/commands/kernel.dart';
 import 'package:benchmark/src/commands/kernel_report.dart';
 import 'package:benchmark/src/commands/notes.dart';
@@ -37,6 +38,7 @@ Future<void> main(List<String> args) async {
         'Relic benchmark tools',
         setLogLevel: _setLogLevel,
       )..addCommands([
+        GcpCommand(),
         KernelCommand(),
         KernelReportCommand(),
         MergeCommand(),
