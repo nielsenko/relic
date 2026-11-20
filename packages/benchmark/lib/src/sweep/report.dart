@@ -360,7 +360,7 @@ const _dartPageSubstitutions = <(String, String)>[
     "<li><b>Isolates.</b> The servers run isolates, each with its own listener on a shared port. The number in a target's name is the count.</li>",
   ),
   (
-    ' hyper uses rustls, dusty and relic_native ztls on AWS-LC, deno and bun their built-in TLS, the dart:io servers SecureSocket.',
+    ' hyper uses rustls on aws-lc-rs, dusty and relic_native ztls on AWS-LC, deno and bun their built-in TLS, the dart:io servers SecureSocket.',
     ' The dart:io servers use SecureSocket, relic_native ztls on AWS-LC.',
   ),
   ('<h1>Relic Load Sweep</h1>', '<h1>Relic Load Sweep: Relic and shelf</h1>'),
@@ -462,7 +462,8 @@ Map<String, String> _setup(Directory sweep, Directory package) {
       '',
       'hyper ${_crateVersion(hyperLock, 'hyper') ?? '?'} on tokio '
           '${_crateVersion(hyperLock, 'tokio') ?? '?'} with rustls '
-          '${_crateVersion(hyperLock, 'rustls') ?? '?'}'
+          '${_crateVersion(hyperLock, 'rustls') ?? '?'} on aws-lc-rs '
+          '${_crateVersion(hyperLock, 'aws-lc-rs') ?? '?'}'
           '${value('rustc') == null ? '' : ', ${value('rustc')!.split(' ').take(2).join(' ')}'}.',
       'dusty ${_zigRef(zon, 'dusty') ?? '?'} on zio '
           '${_zigRef(zon, 'zio') ?? '?'}.',
