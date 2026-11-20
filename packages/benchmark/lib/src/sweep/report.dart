@@ -184,6 +184,16 @@ List<Map<String, Object?>> chartRows(List<Map<String, dynamic>> data) {
       row['${workload}Runs'] = runs.length;
       row['${workload}Sd'] = _round(_populationDeviation(runs) / 1000, 1);
     }
+    // The saturation rate of each round, and how far apart they are.
+    final rounds = (m['roundSaturation'] as List<dynamic>?)?.cast<num>();
+    if (rounds != null && rounds.length > 1) {
+      final mean = rounds.reduce((a, b) => a + b) / rounds.length;
+      row['${workload}Rounds'] = [for (final r in rounds) _round(r / 1000, 1)];
+      row['${workload}RoundSpread'] = _round(
+        (rounds.reduce(math.max) - rounds.reduce(math.min)) / mean,
+        3,
+      );
+    }
     // Instructions per request in thousands: the mean over the closed-loop
     // runs and their deviation, and the cycles and kernel share of the
     // open-loop run at full load.

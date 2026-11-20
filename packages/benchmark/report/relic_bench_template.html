@@ -149,12 +149,13 @@ td.n, th.n { text-align: right; }
   <li><b>Software.</b> SOFTWARE AOT rows are dart build cli bundles of the same servers. shelf on dart:io HttpServer.BASELINES</li>
   <li><b>Open loop check.</b> After the closed-loop saturation, oha offers that same rate in open loop; a notch on every bar marks what it delivered, the table's last column and the hover give the figure.NINETY The notch is never above the mean, since oha offers exactly that rate. A shortfall over 10 percent also prints the figure beside the bar: offering exactly the capacity leaves no slack for the load tool's own timing, which costs most where latency is lowest. SAFER</li>
   <li><b>Counters.</b> Where the machine has a PMU, every run reads the instructions retired and the CPU cycles of the server process through perf_event_open, user and kernel mode, on every thread. Instructions per request is that count over the responses of the run. The NAPI threads and oha are not counted.</li>
+  <li><b>Rounds.</b> With more than one round, the sweep runs every target once per round, against a server started anew, all targets before the next round. A bar is then the mean over the rounds, its taper covers the closed-loop runs of every round, and a label notes rounds more than 5 percent apart. The hover and the table give the rate of each round.</li>
   <li><b>Spread.</b> Every bar is the mean of SATRUNS closed-loop runs, and its end tapers from one standard deviation below the mean to one above, so a crisp end is a repeatable figure and a soft one is not. The hover and the table give the deviation. Differences between two bars inside their tapers are noise.</li>
 </ul></section>
 
 <details>
   <summary>All numbers as a table</summary>
-  <div class="tablewrap"><table id="tbl"><thead><tr><th>target</th><th>what runs</th><th>mode</th><th>transport</th><th class="n">plaintext</th><th class="n">headers</th><th class="n">browser</th><th class="n">deviation</th><th class="n">cores</th><th class="n">k instr</th><th class="n">open loop</th></tr></thead><tbody></tbody></table></div>
+  <div class="tablewrap"><table id="tbl"><thead><tr><th>target</th><th>what runs</th><th>mode</th><th>transport</th><th class="n">plaintext</th><th class="n">headers</th><th class="n">browser</th><th class="n">deviation</th><th class="n">cores</th><th class="n">k instr</th><th class="n">rounds apart</th><th class="n">open loop</th></tr></thead><tbody></tbody></table></div>
 </details>
 </main>
 
@@ -272,6 +273,7 @@ function fmt(v) { return v.toFixed(1) + "k"; }
 function fmtCores(v) { return v === undefined ? "-" : v.toFixed(2); }
 function fmtOpen(v) { return v === undefined ? "-" : fmt(v); }
 function fmtInstr(v) { return v === undefined ? "-" : v.toFixed(1) + "k"; }
+function fmtRounds(d, k) { return d[k + "Rounds"] ? d[k + "Rounds"].map(fmt).join(" ") + " (" + fmtShare(d[k + "RoundSpread"]) + ")" : "-"; }
 function fmtShare(v) { return v === undefined ? "-" : Math.round(v * 100) + "%"; }
 function fmtSd(v) { return v === undefined ? "-" : "\u00b1" + fmt(v); }
 
@@ -370,8 +372,9 @@ function barChart(el, key, kind) {
     }
     const open = cores ? undefined : d[key + "Open"];
     const bound = open !== undefined && open < 0.9 * d[key];
+    const apart = !cores && !instr && d[key + "RoundSpread"] > 0.05;
     if (open !== undefined) s += `<line class="notch" x1="${x(open)}" x2="${x(open)}" y1="${y - 2}" y2="${y + bh + 2}"/>`;
-    s += `<text class="val" x="${left + solid + taper + 6}" y="${y + bh / 2 + 4}">${label(d[key])}${bound ? `<tspan class="open"> open loop ${fmt(open)}</tspan>` : ""}</text>`;
+    s += `<text class="val" x="${left + solid + taper + 6}" y="${y + bh / 2 + 4}">${label(d[key])}${bound ? `<tspan class="open"> open loop ${fmt(open)}</tspan>` : ""}${apart ? `<tspan class="open"> rounds ${fmtShare(d[key + "RoundSpread"])} apart</tspan>` : ""}</text>`;
     s += `</g>`;
   });
   s += `<line class="base" x1="${left}" x2="${left}" y1="${top}" y2="${h - bottom}"/></svg>`;
@@ -444,7 +447,7 @@ document.addEventListener("mousemove", e => {
   let text;
   if (g.dataset.i !== undefined) {
     const d = rows[+g.dataset.i];
-    text = `${d.name}  (${d.mode})\n${d.what}\nplaintext ${fmt(d.plaintext)}   headers ${fmt(d.headers)}   browser ${fmt(d.browser)}\ndeviation of ${d.plaintextRuns || "?"} runs ${fmtSd(d.plaintextSd)} / ${fmtSd(d.headersSd)} / ${fmtSd(d.browserSd)}\ncores ${fmtCores(d.plaintextCores)} / ${fmtCores(d.headersCores)} / ${fmtCores(d.browserCores)}\ninstructions ${fmtInstr(d.plaintextInstr)} / ${fmtInstr(d.headersInstr)} / ${fmtInstr(d.browserInstr)}, cycles ${fmtInstr(d.plaintextCycles)} / ${fmtInstr(d.headersCycles)} / ${fmtInstr(d.browserCycles)}, kernel ${fmtShare(d.plaintextKernel)} / ${fmtShare(d.headersKernel)} / ${fmtShare(d.browserKernel)}\nopen loop at that rate ${fmtOpen(d.plaintextOpen)} / ${fmtOpen(d.headersOpen)} / ${fmtOpen(d.browserOpen)}\nat 90 percent ${fmtOpen(d.plaintextOpen90)} / ${fmtOpen(d.headersOpen90)} / ${fmtOpen(d.browserOpen90)}\nat 95 percent ${fmtOpen(d.plaintextOpen95)} / ${fmtOpen(d.headersOpen95)} / ${fmtOpen(d.browserOpen95)}`;
+    text = `${d.name}  (${d.mode})\n${d.what}\nplaintext ${fmt(d.plaintext)}   headers ${fmt(d.headers)}   browser ${fmt(d.browser)}\ndeviation of ${d.plaintextRuns || "?"} runs ${fmtSd(d.plaintextSd)} / ${fmtSd(d.headersSd)} / ${fmtSd(d.browserSd)}\ncores ${fmtCores(d.plaintextCores)} / ${fmtCores(d.headersCores)} / ${fmtCores(d.browserCores)}\nper round ${fmtRounds(d, "plaintext")} / ${fmtRounds(d, "headers")} / ${fmtRounds(d, "browser")}\ninstructions ${fmtInstr(d.plaintextInstr)} / ${fmtInstr(d.headersInstr)} / ${fmtInstr(d.browserInstr)}, cycles ${fmtInstr(d.plaintextCycles)} / ${fmtInstr(d.headersCycles)} / ${fmtInstr(d.browserCycles)}, kernel ${fmtShare(d.plaintextKernel)} / ${fmtShare(d.headersKernel)} / ${fmtShare(d.browserKernel)}\nopen loop at that rate ${fmtOpen(d.plaintextOpen)} / ${fmtOpen(d.headersOpen)} / ${fmtOpen(d.browserOpen)}\nat 90 percent ${fmtOpen(d.plaintextOpen90)} / ${fmtOpen(d.headersOpen90)} / ${fmtOpen(d.browserOpen90)}\nat 95 percent ${fmtOpen(d.plaintextOpen95)} / ${fmtOpen(d.headersOpen95)} / ${fmtOpen(d.browserOpen95)}`;
   } else if (g.dataset.lat !== undefined) {
     const d = rows[+g.dataset.lat];
     const r = lroute;
@@ -463,7 +466,7 @@ document.addEventListener("mousemove", e => {
 });
 
 const tb = document.querySelector("#tbl tbody");
-tb.innerHTML = rows.map(r => `<tr><td>${r.name}</td><td>${r.what}</td><td>${r.mode}</td><td>${r.tls ? "https" : "http"}</td><td class="n">${fmt(r.plaintext)}</td><td class="n">${fmt(r.headers)}</td><td class="n">${fmt(r.browser)}</td><td class="n">${fmtSd(r.plaintextSd)} / ${fmtSd(r.headersSd)} / ${fmtSd(r.browserSd)}</td><td class="n">${fmtCores(r.plaintextCores)} / ${fmtCores(r.headersCores)} / ${fmtCores(r.browserCores)}</td><td class="n">${fmtInstr(r.plaintextInstr)} / ${fmtInstr(r.headersInstr)} / ${fmtInstr(r.browserInstr)}</td><td class="n">${fmtOpen(r.plaintextOpen)} / ${fmtOpen(r.headersOpen)} / ${fmtOpen(r.browserOpen)}</td></tr>`).join("");
+tb.innerHTML = rows.map(r => `<tr><td>${r.name}</td><td>${r.what}</td><td>${r.mode}</td><td>${r.tls ? "https" : "http"}</td><td class="n">${fmt(r.plaintext)}</td><td class="n">${fmt(r.headers)}</td><td class="n">${fmt(r.browser)}</td><td class="n">${fmtSd(r.plaintextSd)} / ${fmtSd(r.headersSd)} / ${fmtSd(r.browserSd)}</td><td class="n">${fmtCores(r.plaintextCores)} / ${fmtCores(r.headersCores)} / ${fmtCores(r.browserCores)}</td><td class="n">${fmtInstr(r.plaintextInstr)} / ${fmtInstr(r.headersInstr)} / ${fmtInstr(r.browserInstr)}</td><td class="n">${fmtShare(r.plaintextRoundSpread)} / ${fmtShare(r.headersRoundSpread)} / ${fmtShare(r.browserRoundSpread)}</td><td class="n">${fmtOpen(r.plaintextOpen)} / ${fmtOpen(r.headersOpen)} / ${fmtOpen(r.browserOpen)}</td></tr>`).join("");
 
 render();
 </script>
