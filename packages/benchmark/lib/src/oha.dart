@@ -48,11 +48,12 @@ List<String> ohaCommand() {
 /// `Name: value` line. An https [url] goes unverified, since the servers
 /// here present test certificates. Needs `oha` on the PATH.
 ///
-/// No `--latency-correction`. oha 1.16.0 charges pauses of about 300 ms in
-/// its own scheduler to every request due during them, on any server and
-/// at any rate, and a probe client beside it sees none of it. A server
-/// that falls behind the offered rate shows in [OhaResult.rps] against the
-/// rate.
+/// No `--latency-correction`. A server that falls behind the offered rate
+/// shows in [OhaResult.rps] against the rate.
+///
+/// Needs oha 1.17.0 or later for open-loop latencies. 1.16.0 stalls its
+/// own scheduler for up to hundreds of milliseconds in a long rate-limited
+/// run without a TUI, see oha issue 910.
 Future<OhaResult> runOha(
   String url, {
   required int connections,
