@@ -29,6 +29,47 @@ enum SweepOption<V> implements OptionDefinition<V> {
           '95 and 100 percent',
     ),
   ),
+  asyncPass(
+    IntOption(
+      argName: 'async',
+      envName: 'ASYNC',
+      helpText:
+          '1 runs the async pass after the HTTP targets: /async, /timer '
+          'and /db on Relic and shelf at 1, 2 and 4 ways',
+      defaultsTo: 1,
+      min: 0,
+      max: 1,
+    ),
+  ),
+  asyncLoad(
+    StringOption(
+      argName: 'async-load',
+      envName: 'ASYNC_LOAD',
+      helpText:
+          'The http_load arguments of the async pass. As LOAD, on the '
+          'async, timer and db workloads',
+    ),
+  ),
+  pgCtl(
+    StringOption(
+      argName: 'pg-ctl',
+      envName: 'PG_CTL',
+      helpText:
+          'The pg_ctl that starts the postgres behind /db for the async '
+          'pass, as user postgres. Without it the pass leaves out db',
+      defaultsTo: '',
+    ),
+  ),
+  pgData(
+    StringOption(
+      argName: 'pg-data',
+      envName: 'PG_DATA',
+      helpText:
+          'The data directory of that postgres, with password postgres '
+          'for user postgres and the veth network in pg_hba.conf',
+      defaultsTo: '',
+    ),
+  ),
   ohaThreads(
     IntOption(
       argName: 'oha-threads',
@@ -201,18 +242,28 @@ final class SweepCommand extends BetterCommand<SweepOption<dynamic>, void> {
   ) async {
     final package = packageRoot().path;
     final ohaThreads = commandConfig.value(SweepOption.ohaThreads);
-    final load =
-        commandConfig.optionalValue(SweepOption.load) ??
-        '--workloads=plaintext,headers,browser --connections=64 --seconds=5 '
+    String load(SweepOption<String> option, String workloads) =>
+        commandConfig.optionalValue(option) ??
+        '--workloads=$workloads --connections=64 --seconds=5 '
             '--loads=0.5,0.75,0.9,0.95,1.0 --saturation-runs=5 '
             '--oha-threads=$ohaThreads';
+    final pgCtl = commandConfig.value(SweepOption.pgCtl);
     final sweep = Sweep(
       SweepSettings(
         out: Directory(
           commandConfig.optionalValue(SweepOption.out) ??
               p.join(package, 'sweep-out'),
         ).absolute,
-        load: _words(load),
+        load: _words(load(SweepOption.load, 'plaintext,headers,browser')),
+        asyncPass: commandConfig.value(SweepOption.asyncPass) == 1,
+        asyncLoad: _words(
+          load(
+            SweepOption.asyncLoad,
+            pgCtl.isEmpty ? 'async,timer' : 'async,timer,db',
+          ),
+        ),
+        pgCtl: pgCtl,
+        pgData: commandConfig.value(SweepOption.pgData),
         quiet: commandConfig.value(SweepOption.waitForQuiet) == 1,
         pause: commandConfig.value(SweepOption.pause),
         only: _words(commandConfig.value(SweepOption.only)).toSet(),

@@ -109,6 +109,21 @@ sysctl -w kernel.yama.ptrace_scope=0
 # as bench, in user and kernel mode. They need an instance created with
 # PMU set, see bench gcp create.
 sysctl -w kernel.perf_event_paranoid=1
+# The postgres behind /db in the async pass. The sweep starts it with
+# pg_ctl where the load tools run and stops it after the pass, so the
+# packaged service stays off. Password postgres, reachable from the veth
+# network and the loopback.
+apt-get install -y -q postgresql
+systemctl disable --now postgresql || true
+PG_BIN=$(ls -d /usr/lib/postgresql/*/bin | sort -V | tail -1)
+PG_DATA=/var/lib/relic-pg
+if [[ ! -d $PG_DATA ]]; then
+  install -d -o postgres -g postgres -m 700 "$PG_DATA"
+  printf 'postgres\n' > /tmp/pgpass && chown postgres /tmp/pgpass
+  sudo -u postgres "$PG_BIN/initdb" -D "$PG_DATA" -U postgres --pwfile=/tmp/pgpass --auth-host=scram-sha-256 >/dev/null
+  rm -f /tmp/pgpass
+  printf 'host all all 10.77.0.0/24 scram-sha-256\n' >> "$PG_DATA/pg_hba.conf"
+fi
 
 echo "=== clone and build $(date)"
 if [[ -n $PATCH ]]; then printf '%s\n' "$PATCH" > /tmp/relic.patch; else : > /tmp/relic.patch; fi
@@ -129,7 +144,7 @@ BENCH
 
 echo "=== sweep $(date)"
 OUT=/home/bench/sweep-out
-su - bench -c "export PATH=\$HOME/.cargo/bin:$DART:\$PATH; cd relic/packages/benchmark && env REQUIRE_PMU=$REQUIRE_PMU $ENVS DART_SDKS='${SDKS# }' ONLY='$ONLY' OUT=$OUT dart run bin/bench.dart $SCRIPT" || echo "sweep exited $?"
+su - bench -c "export PATH=\$HOME/.cargo/bin:$DART:\$PATH; cd relic/packages/benchmark && env REQUIRE_PMU=$REQUIRE_PMU PG_CTL=$PG_BIN/pg_ctl PG_DATA=$PG_DATA $ENVS DART_SDKS='${SDKS# }' ONLY='$ONLY' OUT=$OUT dart run bin/bench.dart $SCRIPT" || echo "sweep exited $?"
 {
   echo "instance: $NAME $TYPE"
   echo "relic: $BRANCH $(su - bench -c 'git -C relic log -1 --format=%h')"
