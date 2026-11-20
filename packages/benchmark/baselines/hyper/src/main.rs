@@ -178,6 +178,8 @@ async fn serve(port: u16, rest: &[String]) -> Result<(), Box<dyn std::error::Err
     println!("listening on {}://{addr}/", if acceptor.is_some() { "https" } else { "http" });
     loop {
         let (stream, _) = listener.accept().await?;
+        // As the other servers do: each response goes out at once.
+        stream.set_nodelay(true)?;
         let acceptor = acceptor.clone();
         tokio::spawn(async move {
             let service = service_fn(move |req| handle(req, items));
