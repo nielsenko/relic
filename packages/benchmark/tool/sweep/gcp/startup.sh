@@ -11,8 +11,11 @@
 #   sweep-env     environment for the sweep, "QUIET=0 PAUSE=5 OHA_THREADS=8 NET=veth"
 #                 by default
 #   sweep-only    a space-separated list of targets, all by default
-#   sweep-script  the command of bin/bench.dart to run in packages/benchmark,
-#                 sweep by default, or kernel
+#   sweep-script  the steps to run in packages/benchmark, separated by
+#                 spaces, "sweep micro" by default. sweep and kernel are
+#                 commands of bin/bench.dart, micro runs the micro
+#                 benchmarks through bench_press, JIT and AOT, pinned to
+#                 CPU 2, into micro/ of the results
 #   dart-sdks     the Dart SDK versions to install, "3.14.1" by default. The
 #                 first one runs the tools. With more than one, the sweep
 #                 runs every Dart target on each of them
@@ -37,7 +40,7 @@ PATCH=$(md relic-patch "")
 BUCKET=$(md relic-bucket relic-bench-nights)
 ENVS=$(md sweep-env "QUIET=0 PAUSE=5 OHA_THREADS=8 NET=veth")
 ONLY=$(md sweep-only "")
-SCRIPT=$(md sweep-script sweep)
+SCRIPT=$(md sweep-script "sweep micro")
 DARTS=$(md dart-sdks 3.14.1)
 KEEP=$(md keep 0)
 REQUIRE_PMU=$(md require-pmu 0)
@@ -143,9 +146,19 @@ if [[ -s /tmp/relic.patch ]]; then git apply /tmp/relic.patch; fi
 (cd packages/benchmark/baselines/dusty && zig build --release)
 BENCH
 
-echo "=== sweep $(date)"
 OUT=/home/bench/sweep-out
-su - bench -c "export PATH=\$HOME/.cargo/bin:$DART:\$PATH; cd relic/packages/benchmark && env REQUIRE_PMU=$REQUIRE_PMU PG_CTL=$PG_BIN/pg_ctl PG_DATA=$PG_DATA $ENVS DART_SDKS='${SDKS# }' ONLY='$ONLY' OUT=$OUT dart run bin/bench.dart $SCRIPT" || echo "sweep exited $?"
+for STEP in $SCRIPT; do
+  echo "=== $STEP $(date)"
+  case $STEP in
+    micro)
+      su - bench -c "export PATH=\$HOME/.cargo/bin:$DART:\$PATH; mkdir -p $OUT/micro; cd relic/packages/benchmark && for t in jit aot; do dart run bench_press run -t \$t --pin-cpu=2 --save $OUT/micro/\$t.json benchmark/ > $OUT/micro/\$t.md 2>&1 || echo micro \$t exited \$?; done" || echo "micro exited $?"
+      ;;
+    *)
+      su - bench -c "export PATH=\$HOME/.cargo/bin:$DART:\$PATH; cd relic/packages/benchmark && env REQUIRE_PMU=$REQUIRE_PMU PG_CTL=$PG_BIN/pg_ctl PG_DATA=$PG_DATA $ENVS DART_SDKS='${SDKS# }' ONLY='$ONLY' OUT=$OUT dart run bin/bench.dart $STEP" || echo "$STEP exited $?"
+      ;;
+  esac
+done
+mkdir -p "$OUT"
 {
   echo "instance: $NAME $TYPE"
   echo "relic: $BRANCH $(su - bench -c 'git -C relic log -1 --format=%h')"

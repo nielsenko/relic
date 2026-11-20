@@ -150,7 +150,10 @@ enum GcpCreateOption<V> implements OptionDefinition<V> {
     StringOption(
       argName: 'sweep-script',
       envName: 'SWEEP_SCRIPT',
-      helpText: 'The bench command the instance runs: sweep or kernel',
+      helpText:
+          'The steps the instance runs, separated by spaces: sweep, kernel '
+          'and micro, the bench_press micro benchmarks. sweep micro by '
+          'default',
     ),
   ),
   dartSdks(
