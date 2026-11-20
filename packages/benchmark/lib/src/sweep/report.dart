@@ -184,6 +184,28 @@ List<Map<String, Object?>> chartRows(List<Map<String, dynamic>> data) {
       row['${workload}Runs'] = runs.length;
       row['${workload}Sd'] = _round(_populationDeviation(runs) / 1000, 1);
     }
+    // Instructions per request in thousands: the mean over the closed-loop
+    // runs and their deviation, and the cycles and kernel share of the
+    // open-loop run at full load.
+    final instructions =
+        (m['saturationInstructionsPerRequest'] as List<dynamic>?)?.cast<num>();
+    if (instructions != null && instructions.isNotEmpty) {
+      final mean = instructions.reduce((a, b) => a + b) / instructions.length;
+      row['${workload}Instr'] = _round(mean / 1000, 1);
+      row['${workload}InstrSd'] = _round(
+        _populationDeviation(instructions) / 1000,
+        1,
+      );
+    }
+    if (m['cyclesPerRequest'] case final num cycles) {
+      row['${workload}Cycles'] = _round(cycles / 1000, 1);
+    }
+    if ((m['kernelInstructionsPerRequest'], m['instructionsPerRequest']) case (
+      final num kernel,
+      final num all,
+    ) when all > 0) {
+      row['${workload}Kernel'] = _round(kernel / all, 2);
+    }
   }
   final sorted = rows.values.toList();
   for (final row in sorted) {

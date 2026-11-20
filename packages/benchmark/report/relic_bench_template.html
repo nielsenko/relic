@@ -124,7 +124,7 @@ td.n, th.n { text-align: right; }
 <section class="panel" id="p-headers"><h2>Headers</h2><p class="sub">GET /headers, parses and re-emits a set of typed request headers. Sorted by this route.</p><div class="chart"></div></section>
 <section class="panel" id="p-browser"><h2>Browser</h2><p class="sub">GET /browser, a browser-like request with cookies, Accept-Language and Sec-Fetch headers. Sorted by this route.</p><div class="chart"></div></section>
 <div class="tabs" id="lroute" role="group" aria-label="Latency route">
-  <span class="tablabel">Latency on</span>
+  <span class="tablabel">Latency and instructions on</span>
   <button data-r="plaintext" aria-pressed="false">plaintext</button>
   <button data-r="headers" aria-pressed="true">headers</button>
   <button data-r="browser" aria-pressed="false">browser</button>
@@ -132,6 +132,7 @@ td.n, th.n { text-align: right; }
 <section class="panel" id="p-lat-load"><h2>p99 latency under load</h2><p class="sub">Each row runs from p99 at 50 percent of the saturation rate (hollow) through 75 (filled) to TOPLOAD percent (ringed), offered in open loop, on a log scale. A flat row serves close to its peak without queueing; a long one is queueing on the way there. Sorted by p99 at 75 percent.</p><div class="chart"></div></section>
 <section class="panel" id="p-lat-75"><h2>Latency at 75 percent of saturation</h2><p class="sub">The sustainable point on every target, free of ceiling effects: p99 as the dot, p50 and p99.9 as the ticks either side, log scale. Sorted by p99.</p><div class="chart"></div></section>
 <section class="panel" id="p-cores"><h2>Cores busy at saturation</h2><p class="sub">CPU time of the server process over the plaintext run divided by its wall time. Sorted by cores.</p><div class="chart"></div></section>
+<section class="panel" id="p-instr"><h2>Instructions per request</h2><p class="sub">Instructions the server process retired per request on the route the latency tabs pick, from the hardware counters, over the closed-loop runs; the taper is one standard deviation either side. Unlike rates and cores, the count barely depends on what else the machine does. Sorted by count, fewest first.</p><div class="chart"></div></section>
 <section class="panel" id="p-tls"><h2>TLS cost</h2><p class="sub">Change in rps when the same server serves HTTPS instead of HTTP. oha holds the 64 connections open, so this is per-request record cost, not handshakes.</p><div class="chart"></div></section>
 <section class="panel" id="p-aot"><h2>AOT versus JIT</h2><p class="sub">Change in rps when the same server runs as a dart build cli bundle instead of under the JIT. Positive means AOT is faster.</p><div class="chart"></div></section>
 
@@ -147,12 +148,13 @@ td.n, th.n { text-align: right; }
   <li><b>TLS.</b> TLS 1.3 with the relic_native test certificate (ECDSA P-256). The 64 connections stay open, so the HTTPS rows cost per record, not per handshake. hyper uses rustls, dusty and relic_native ztls on AWS-LC, deno and bun their built-in TLS, the dart:io servers SecureSocket.</li>
   <li><b>Software.</b> SOFTWARE AOT rows are dart build cli bundles of the same servers. shelf on dart:io HttpServer.BASELINES</li>
   <li><b>Open loop check.</b> After the closed-loop saturation, oha offers that same rate in open loop; a notch on every bar marks what it delivered, the table's last column and the hover give the figure.NINETY The notch is never above the mean, since oha offers exactly that rate. A shortfall over 10 percent also prints the figure beside the bar: offering exactly the capacity leaves no slack for the load tool's own timing, which costs most where latency is lowest. SAFER</li>
+  <li><b>Counters.</b> Where the machine has a PMU, every run reads the instructions retired and the CPU cycles of the server process through perf_event_open, user and kernel mode, on every thread. Instructions per request is that count over the responses of the run. The NAPI threads and oha are not counted.</li>
   <li><b>Spread.</b> Every bar is the mean of SATRUNS closed-loop runs, and its end tapers from one standard deviation below the mean to one above, so a crisp end is a repeatable figure and a soft one is not. The hover and the table give the deviation. Differences between two bars inside their tapers are noise.</li>
 </ul></section>
 
 <details>
   <summary>All numbers as a table</summary>
-  <div class="tablewrap"><table id="tbl"><thead><tr><th>target</th><th>what runs</th><th>mode</th><th>transport</th><th class="n">plaintext</th><th class="n">headers</th><th class="n">browser</th><th class="n">deviation</th><th class="n">cores</th><th class="n">open loop</th></tr></thead><tbody></tbody></table></div>
+  <div class="tablewrap"><table id="tbl"><thead><tr><th>target</th><th>what runs</th><th>mode</th><th>transport</th><th class="n">plaintext</th><th class="n">headers</th><th class="n">browser</th><th class="n">deviation</th><th class="n">cores</th><th class="n">k instr</th><th class="n">open loop</th></tr></thead><tbody></tbody></table></div>
 </details>
 </main>
 
@@ -269,6 +271,8 @@ function defs() {
 function fmt(v) { return v.toFixed(1) + "k"; }
 function fmtCores(v) { return v === undefined ? "-" : v.toFixed(2); }
 function fmtOpen(v) { return v === undefined ? "-" : fmt(v); }
+function fmtInstr(v) { return v === undefined ? "-" : v.toFixed(1) + "k"; }
+function fmtShare(v) { return v === undefined ? "-" : Math.round(v * 100) + "%"; }
 function fmtSd(v) { return v === undefined ? "-" : "\u00b1" + fmt(v); }
 
 let lroute = "headers";
@@ -331,14 +335,17 @@ function latencyChart(el, kind) {
   el.innerHTML = s;
 }
 
-function barChart(el, key, cores) {
-  const data = visible().filter(d => d[key] !== undefined).sort((a,b) => b[key] - a[key]);
-  const label = cores ? fmtCores : fmt;
+function barChart(el, key, kind) {
+  const cores = kind === "cores", instr = kind === "instr";
+  const data = visible().filter(d => d[key] !== undefined)
+    .sort((a,b) => instr ? a[key] - b[key] : b[key] - a[key]);
+  if (!data.length) { el.innerHTML = ""; return; }
+  const label = cores ? fmtCores : instr ? fmtInstr : fmt;
   const left = 200, right = 150, rowH = 24, top = 8, bottom = 22;
   const w = 880, plotW = w - left - right;
   const h = top + data.length * rowH + bottom;
   const max = Math.max(...data.map(d => d[key]));
-  const step = cores ? 0.5 : max > 400 ? 100 : max > 200 ? 50 : max > 100 ? 25 : 10;
+  const step = cores ? 0.5 : instr ? (max > 200 ? 50 : max > 100 ? 25 : max > 40 ? 10 : 5) : max > 400 ? 100 : max > 200 ? 50 : max > 100 ? 25 : 10;
   const axisMax = Math.ceil(max / step) * step;
   const x = v => left + v / axisMax * plotW;
   let s = `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="${key} requests per second by target">` + defs();
@@ -399,7 +406,10 @@ function render() {
   latencyChart(document.querySelector("#p-lat-75 .chart"), "75");
   const hasCores = rows.some(r => r.plaintextCores !== undefined);
   document.getElementById("p-cores").hidden = !hasCores;
-  if (hasCores) barChart(document.querySelector("#p-cores .chart"), "plaintextCores", true);
+  if (hasCores) barChart(document.querySelector("#p-cores .chart"), "plaintextCores", "cores");
+  const hasInstr = rows.some(r => r.plaintextInstr !== undefined);
+  document.getElementById("p-instr").hidden = !hasInstr;
+  if (hasInstr) barChart(document.querySelector("#p-instr .chart"), lroute + "Instr", "instr");
   aotChart(document.querySelector("#p-aot .chart"));
 }
 
@@ -434,7 +444,7 @@ document.addEventListener("mousemove", e => {
   let text;
   if (g.dataset.i !== undefined) {
     const d = rows[+g.dataset.i];
-    text = `${d.name}  (${d.mode})\n${d.what}\nplaintext ${fmt(d.plaintext)}   headers ${fmt(d.headers)}   browser ${fmt(d.browser)}\ndeviation of ${d.plaintextRuns || "?"} runs ${fmtSd(d.plaintextSd)} / ${fmtSd(d.headersSd)} / ${fmtSd(d.browserSd)}\ncores ${fmtCores(d.plaintextCores)} / ${fmtCores(d.headersCores)} / ${fmtCores(d.browserCores)}\nopen loop at that rate ${fmtOpen(d.plaintextOpen)} / ${fmtOpen(d.headersOpen)} / ${fmtOpen(d.browserOpen)}\nat 90 percent ${fmtOpen(d.plaintextOpen90)} / ${fmtOpen(d.headersOpen90)} / ${fmtOpen(d.browserOpen90)}\nat 95 percent ${fmtOpen(d.plaintextOpen95)} / ${fmtOpen(d.headersOpen95)} / ${fmtOpen(d.browserOpen95)}`;
+    text = `${d.name}  (${d.mode})\n${d.what}\nplaintext ${fmt(d.plaintext)}   headers ${fmt(d.headers)}   browser ${fmt(d.browser)}\ndeviation of ${d.plaintextRuns || "?"} runs ${fmtSd(d.plaintextSd)} / ${fmtSd(d.headersSd)} / ${fmtSd(d.browserSd)}\ncores ${fmtCores(d.plaintextCores)} / ${fmtCores(d.headersCores)} / ${fmtCores(d.browserCores)}\ninstructions ${fmtInstr(d.plaintextInstr)} / ${fmtInstr(d.headersInstr)} / ${fmtInstr(d.browserInstr)}, cycles ${fmtInstr(d.plaintextCycles)} / ${fmtInstr(d.headersCycles)} / ${fmtInstr(d.browserCycles)}, kernel ${fmtShare(d.plaintextKernel)} / ${fmtShare(d.headersKernel)} / ${fmtShare(d.browserKernel)}\nopen loop at that rate ${fmtOpen(d.plaintextOpen)} / ${fmtOpen(d.headersOpen)} / ${fmtOpen(d.browserOpen)}\nat 90 percent ${fmtOpen(d.plaintextOpen90)} / ${fmtOpen(d.headersOpen90)} / ${fmtOpen(d.browserOpen90)}\nat 95 percent ${fmtOpen(d.plaintextOpen95)} / ${fmtOpen(d.headersOpen95)} / ${fmtOpen(d.browserOpen95)}`;
   } else if (g.dataset.lat !== undefined) {
     const d = rows[+g.dataset.lat];
     const r = lroute;
@@ -453,7 +463,7 @@ document.addEventListener("mousemove", e => {
 });
 
 const tb = document.querySelector("#tbl tbody");
-tb.innerHTML = rows.map(r => `<tr><td>${r.name}</td><td>${r.what}</td><td>${r.mode}</td><td>${r.tls ? "https" : "http"}</td><td class="n">${fmt(r.plaintext)}</td><td class="n">${fmt(r.headers)}</td><td class="n">${fmt(r.browser)}</td><td class="n">${fmtSd(r.plaintextSd)} / ${fmtSd(r.headersSd)} / ${fmtSd(r.browserSd)}</td><td class="n">${fmtCores(r.plaintextCores)} / ${fmtCores(r.headersCores)} / ${fmtCores(r.browserCores)}</td><td class="n">${fmtOpen(r.plaintextOpen)} / ${fmtOpen(r.headersOpen)} / ${fmtOpen(r.browserOpen)}</td></tr>`).join("");
+tb.innerHTML = rows.map(r => `<tr><td>${r.name}</td><td>${r.what}</td><td>${r.mode}</td><td>${r.tls ? "https" : "http"}</td><td class="n">${fmt(r.plaintext)}</td><td class="n">${fmt(r.headers)}</td><td class="n">${fmt(r.browser)}</td><td class="n">${fmtSd(r.plaintextSd)} / ${fmtSd(r.headersSd)} / ${fmtSd(r.browserSd)}</td><td class="n">${fmtCores(r.plaintextCores)} / ${fmtCores(r.headersCores)} / ${fmtCores(r.browserCores)}</td><td class="n">${fmtInstr(r.plaintextInstr)} / ${fmtInstr(r.headersInstr)} / ${fmtInstr(r.browserInstr)}</td><td class="n">${fmtOpen(r.plaintextOpen)} / ${fmtOpen(r.headersOpen)} / ${fmtOpen(r.browserOpen)}</td></tr>`).join("");
 
 render();
 </script>
