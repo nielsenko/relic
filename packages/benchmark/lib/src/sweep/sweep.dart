@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 
 import 'net.dart';
 import 'processes.dart';
+import 'rounds.dart';
 import 'targets.dart';
 
 /// What a sweep runs with. Each setting is also an environment variable of
@@ -16,6 +17,10 @@ final class SweepSettings {
 
   /// The http_load arguments of every HTTP target.
   final List<String> load;
+
+  /// How often every HTTP target runs, each time against a server of its
+  /// own, see [combineRounds].
+  final int rounds;
 
   /// Whether to run the async pass, see [asyncTargets].
   final bool asyncPass;
@@ -72,6 +77,7 @@ final class SweepSettings {
   SweepSettings({
     required this.out,
     required this.load,
+    this.rounds = 1,
     this.asyncPass = false,
     this.asyncLoad = const [],
     this.pgCtl = '',
@@ -262,14 +268,23 @@ final class Sweep {
         'start ${DateTime.now()}\n',
         mode: FileMode.append,
       );
-      for (final target in httpTargets) {
-        await _eachSdk(
-          target.name,
-          dart: target.launch.isDart,
-          (sdk, out, suffix) => _httpRun(target, sdk, out, suffix),
-        );
+      // The rounds go through every target in turn, so a drift of the
+      // machine spreads over all targets alike.
+      for (_round = 1; _round <= settings.rounds; _round++) {
+        for (final target in httpTargets) {
+          await _eachSdk(
+            target.name,
+            dart: target.launch.isDart,
+            (sdk, out, suffix) => _httpRun(target, sdk, out, suffix),
+          );
+        }
+        if (settings.asyncPass) await _asyncPass();
       }
-      if (settings.asyncPass) await _asyncPass();
+      _round = 0;
+      if (settings.rounds > 1) {
+        final combined = combineRounds(settings.out, settings.rounds);
+        _log('combined ${settings.rounds} rounds of $combined results');
+      }
       await _webSockets();
       _progress.writeAsStringSync(
         'done ${DateTime.now()}\n',
@@ -487,17 +502,30 @@ final class Sweep {
     return settings.only.contains(name);
   }
 
+  /// The round running now, from 1, or 0 outside the rounds.
+  int _round = 0;
+
+  /// Where [directory], a directory of the output, is in the round running
+  /// now: `round-<n>` in the output with more than one round.
+  Directory _inRound(Directory directory) {
+    if (settings.rounds == 1 || _round == 0) return directory;
+    final relative = p.relative(directory.path, from: _out);
+    return Directory(p.normalize(p.join(_out, 'round-$_round', relative)))
+      ..createSync(recursive: true);
+  }
+
   /// Runs a target on every SDK when it is [dart], or once on the first
-  /// SDK with its results in the output directory.
+  /// SDK with its results in the output directory, of the round.
   Future<void> _eachSdk(
     String name,
     Future<void> Function(Sdk sdk, Directory out, String suffix) run, {
     required bool dart,
   }) async {
     if (!_wanted(name)) return;
-    if (!dart) return run(_sdks.first, settings.out, '');
+    final round = settings.rounds > 1 && _round > 0 ? ' round $_round' : '';
+    if (!dart) return run(_sdks.first, _inRound(settings.out), round);
     for (final sdk in _sdks) {
-      await run(sdk, sdk.out, sdk.suffix);
+      await run(sdk, _inRound(sdk.out), '${sdk.suffix}$round');
     }
   }
 

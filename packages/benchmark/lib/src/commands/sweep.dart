@@ -29,6 +29,19 @@ enum SweepOption<V> implements OptionDefinition<V> {
           '95 and 100 percent',
     ),
   ),
+  rounds(
+    IntOption(
+      argName: 'rounds',
+      envName: 'ROUNDS',
+      helpText:
+          'How often every HTTP target runs, against a server started anew '
+          'each time, all targets once before the next round. With more '
+          'than one, each round is in <out>/round-<n>, and the output has '
+          'their mean and the spread between them',
+      defaultsTo: 2,
+      min: 1,
+    ),
+  ),
   asyncPass(
     IntOption(
       argName: 'async',
@@ -255,6 +268,7 @@ final class SweepCommand extends BetterCommand<SweepOption<dynamic>, void> {
               p.join(package, 'sweep-out'),
         ).absolute,
         load: _words(load(SweepOption.load, 'plaintext,headers,browser')),
+        rounds: commandConfig.value(SweepOption.rounds),
         asyncPass: commandConfig.value(SweepOption.asyncPass) == 1,
         asyncLoad: _words(
           load(
