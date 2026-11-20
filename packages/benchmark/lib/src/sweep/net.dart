@@ -147,6 +147,7 @@ final class Net {
           extra: {
             'BENCH_ADDRESS': host,
             'BENCH_OHA': ?environment['BENCH_OHA'],
+            'RELIC_BENCH_PG_HOST': ?environment['RELIC_BENCH_PG_HOST'],
           },
         )
       : command;
@@ -156,6 +157,15 @@ final class Net {
     List<String> command,
     Map<String, String> environment,
   ) => isVeth ? _asMeIn('cli', clientCpus, command, environment) : command;
+
+  /// The address the servers reach the postgres of the async pass at,
+  /// which runs where the load tools do.
+  String get databaseHost => isVeth ? '10.77.0.2' : '127.0.0.1';
+
+  /// [command] as root where the load tools run, on their CPUs over veth.
+  List<String> clientSideAsRoot(List<String> command) => isVeth
+      ? inNamespace('cli', ['taskset', '-c', clientCpus, ...command])
+      : ['sudo', '-n', ...command];
 
   /// What runs oha on the client side, for `BENCH_OHA`, or null on the
   /// loopback, where http_load finds oha on its PATH.

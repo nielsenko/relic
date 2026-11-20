@@ -255,3 +255,25 @@ const httpTargets = <HttpTarget>[
   HttpTarget('relic12-io4-tls', 18524, Launch.relic12, 4, tls: true),
   HttpTarget('relic12-io8-tls', 18528, Launch.relic12, 8, tls: true),
 ];
+
+/// The targets of the async pass, which loads the routes whose handlers
+/// wait: /async, /timer and /db. Only load_serve has them, so only Relic
+/// and shelf run there. Their results go to the async directory of the
+/// output.
+final asyncTargets = [
+  for (final name in const [
+    'relic-native',
+    'relic-native2',
+    'relic-native4',
+    'relic-native-aot',
+    'relic-native2-aot',
+    'relic-native4-aot',
+    'relic-io',
+    'relic-io2',
+    'relic-io4',
+    'shelf',
+    'shelf2',
+    'shelf4',
+  ])
+    httpTargets.firstWhere((target) => target.name == name),
+];

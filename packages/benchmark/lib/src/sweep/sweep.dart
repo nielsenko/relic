@@ -17,6 +17,17 @@ final class SweepSettings {
   /// The http_load arguments of every HTTP target.
   final List<String> load;
 
+  /// Whether to run the async pass, see [asyncTargets].
+  final bool asyncPass;
+
+  /// The http_load arguments of the async pass.
+  final List<String> asyncLoad;
+
+  /// The pg_ctl and data directory of the postgres behind /db, empty for
+  /// none.
+  final String pgCtl;
+  final String pgData;
+
   /// Whether to wait for a one-minute load average under 1.5 before every
   /// target, up to 15 minutes.
   final bool quiet;
@@ -61,6 +72,10 @@ final class SweepSettings {
   SweepSettings({
     required this.out,
     required this.load,
+    this.asyncPass = false,
+    this.asyncLoad = const [],
+    this.pgCtl = '',
+    this.pgData = '',
     required this.quiet,
     required this.pause,
     required this.only,
@@ -254,6 +269,7 @@ final class Sweep {
           (sdk, out, suffix) => _httpRun(target, sdk, out, suffix),
         );
       }
+      if (settings.asyncPass) await _asyncPass();
       await _webSockets();
       _progress.writeAsStringSync(
         'done ${DateTime.now()}\n',
@@ -616,21 +632,91 @@ final class Sweep {
   static int _byPath(FileSystemEntity a, FileSystemEntity b) =>
       a.path.compareTo(b.path);
 
+  /// The async pass: [asyncTargets] on [SweepSettings.asyncLoad], with a
+  /// postgres for /db where the load tools run when
+  /// [SweepSettings.pgCtl] names one.
+  Future<void> _asyncPass() async {
+    final postgres = settings.pgCtl.isNotEmpty && await _startPostgres();
+    try {
+      for (final target in asyncTargets) {
+        await _eachSdk(
+          target.name,
+          dart: true,
+          (sdk, out, suffix) => _httpRun(
+            target,
+            sdk,
+            Directory(p.join(out.path, 'async'))..createSync(recursive: true),
+            '$suffix async',
+            load: settings.asyncLoad,
+            extra: {'RELIC_BENCH_PG_HOST': net.databaseHost},
+          ),
+        );
+      }
+    } finally {
+      if (postgres) await _pgCtl(['stop', '-m', 'fast']);
+    }
+  }
+
+  Future<bool> _pgCtl(List<String> arguments) => succeeds(
+    net.clientSideAsRoot([
+      'sudo',
+      '-u',
+      'postgres',
+      settings.pgCtl,
+      '-D',
+      settings.pgData,
+      ...arguments,
+    ]),
+  );
+
+  /// Starts the postgres of /db on the load tools' side, listening where
+  /// the servers reach it, and checks the servers' side reaches it.
+  Future<bool> _startPostgres() async {
+    final host = net.databaseHost;
+    final started = await _pgCtl([
+      '-w',
+      // In its own directory, since postgres cannot write to ours.
+      '-l',
+      p.join(settings.pgData, 'sweep.log'),
+      '-o',
+      '-c listen_addresses=$host -c max_connections=200',
+      'start',
+    ]);
+    final reached =
+        started &&
+        await succeeds(
+          net.serverSide([
+            'bash',
+            '-c',
+            'echo > /dev/tcp/$host/5432',
+          ], Platform.environment),
+        );
+    _log(
+      reached
+          ? 'postgres up at $host:5432'
+          : 'postgres ${started ? 'not reachable at $host:5432' : 'did not start'}, see sweep.log in ${settings.pgData}',
+    );
+    return started;
+  }
+
   Future<void> _httpRun(
     HttpTarget target,
     Sdk sdk,
     Directory out,
-    String suffix,
-  ) async {
+    String suffix, {
+    List<String>? load,
+    Map<String, String> extra = const {},
+  }) async {
     final name = target.name;
+    final environment = {...sdk.environment, ...extra};
     File file(String extension) => File(p.join(out.path, '$name.$extension'));
     await _quiet();
     final url = target.url(net.host);
     final (command, directory) = _server(target, sdk);
     final server = await startLogged(
-      net.serverSide(command, sdk.environment),
+      net.serverSide(command, environment),
       file('server.log'),
-      environment: sdk.environment,
+      environment: environment,
       workingDirectory: directory,
       nohup: true,
     );
@@ -646,7 +732,7 @@ final class Sweep {
           'bin/http_load.dart',
           if (napiDevice != null) '--napi-device=$napiDevice',
           '--targets=$name=$url',
-          ...settings.load,
+          ...(load ?? settings.load),
           '--out=${file('md').path}',
         ],
         sdk.environment,
