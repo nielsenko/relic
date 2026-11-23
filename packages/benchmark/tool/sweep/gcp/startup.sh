@@ -12,8 +12,9 @@
 #                 by default
 #   sweep-only    a space-separated list of targets, all by default
 #   sweep-script  the steps to run in packages/benchmark, separated by
-#                 spaces, "sweep micro" by default. sweep and kernel are
-#                 commands of bin/bench.dart, micro runs the micro
+#                 spaces, "sweep kernel micro" by default. sweep and kernel
+#                 are commands of bin/bench.dart, kernel writing into
+#                 kernel/ of the results, micro runs the micro
 #                 benchmarks through bench_press, JIT and AOT, pinned to
 #                 CPU 2, into micro/ of the results
 #   dart-sdks     the Dart SDK versions to install, "3.14.1" by default. The
@@ -40,7 +41,7 @@ PATCH=$(md relic-patch "")
 BUCKET=$(md relic-bucket relic-bench-nights)
 ENVS=$(md sweep-env "QUIET=0 PAUSE=5 LOAD_THREADS=8 NET=veth")
 ONLY=$(md sweep-only "")
-SCRIPT=$(md sweep-script "sweep micro")
+SCRIPT=$(md sweep-script "sweep kernel micro")
 DARTS=$(md dart-sdks 3.14.1)
 KEEP=$(md keep 0)
 REQUIRE_PMU=$(md require-pmu 0)
@@ -159,7 +160,9 @@ for STEP in $SCRIPT; do
       su - bench -c "export PATH=\$HOME/.cargo/bin:$DART:\$PATH; mkdir -p $OUT/micro; cd relic/packages/benchmark && for t in jit aot; do dart run bench_press run -t \$t --pin-cpu=2 --save $OUT/micro/\$t.json benchmark/ > $OUT/micro/\$t.md 2>&1 || echo micro \$t exited \$?; done" || echo "micro exited $?"
       ;;
     *)
-      su - bench -c "export PATH=\$HOME/.cargo/bin:$DART:\$PATH; cd relic/packages/benchmark && env REQUIRE_PMU=$REQUIRE_PMU PG_CTL=$PG_BIN/pg_ctl PG_DATA=$PG_DATA $ENVS DART_SDKS='${SDKS# }' ONLY='$ONLY' OUT=$OUT dart run bin/bench.dart $STEP" || echo "$STEP exited $?"
+      DIR=$OUT
+      [[ $STEP == kernel ]] && DIR=$OUT/kernel
+      su - bench -c "export PATH=\$HOME/.cargo/bin:$DART:\$PATH; cd relic/packages/benchmark && env REQUIRE_PMU=$REQUIRE_PMU PG_CTL=$PG_BIN/pg_ctl PG_DATA=$PG_DATA $ENVS DART_SDKS='${SDKS# }' ONLY='$ONLY' OUT=$DIR dart run bin/bench.dart $STEP" || echo "$STEP exited $?"
       ;;
   esac
 done
