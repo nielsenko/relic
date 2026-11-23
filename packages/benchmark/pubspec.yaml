@@ -33,6 +33,7 @@ dependencies:
 
 dev_dependencies:
   serverpod_lints: ">=3.0.0 <5.0.0"
+  test: ^1.25.0
 
 # The relic packages of this tree for the ones relic and relic_native
 # bring in.
