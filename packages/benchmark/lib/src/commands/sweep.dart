@@ -83,11 +83,11 @@ enum SweepOption<V> implements OptionDefinition<V> {
       defaultsTo: '',
     ),
   ),
-  ohaThreads(
+  loadThreads(
     IntOption(
-      argName: 'oha-threads',
-      envName: 'OHA_THREADS',
-      helpText: 'Worker threads of oha and of the WebSocket load client',
+      argName: 'load-threads',
+      envName: 'LOAD_THREADS',
+      helpText: 'Threads of zrk and of the WebSocket load client',
       defaultsTo: 4,
       min: 1,
     ),
@@ -254,12 +254,12 @@ final class SweepCommand extends BetterCommand<SweepOption<dynamic>, void> {
     Configuration<SweepOption<dynamic>> commandConfig,
   ) async {
     final package = packageRoot().path;
-    final ohaThreads = commandConfig.value(SweepOption.ohaThreads);
+    final loadThreads = commandConfig.value(SweepOption.loadThreads);
     String load(SweepOption<String> option, String workloads) =>
         commandConfig.optionalValue(option) ??
         '--workloads=$workloads --connections=64 --seconds=5 '
             '--loads=0.5,0.75,0.9,0.95,1.0 --saturation-runs=5 '
-            '--oha-threads=$ohaThreads';
+            '--load-threads=$loadThreads';
     final pgCtl = commandConfig.value(SweepOption.pgCtl);
     final sweep = Sweep(
       SweepSettings(
@@ -290,7 +290,7 @@ final class SweepCommand extends BetterCommand<SweepOption<dynamic>, void> {
         variants: SweepSettings.parseSdks(
           commandConfig.value(SweepOption.variants),
         ),
-        ohaThreads: ohaThreads,
+        loadThreads: loadThreads,
         requirePmu: commandConfig.value(SweepOption.requirePmu) == 1,
         wsConnections: commandConfig.value(SweepOption.wsConnections),
         wsSeconds: commandConfig.value(SweepOption.wsSeconds),

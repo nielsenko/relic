@@ -62,8 +62,8 @@ final class SweepSettings {
   /// is. Not together with [dartSdks].
   final Map<String, String> variants;
 
-  /// Worker threads of oha and of the WebSocket load client.
-  final int ohaThreads;
+  /// Threads of zrk and of the WebSocket load client.
+  final int loadThreads;
 
   /// Whether the sweep stops before the first target when the machine
   /// gives no hardware counters.
@@ -90,7 +90,7 @@ final class SweepSettings {
     required this.vethQueues,
     required this.dartSdks,
     required this.variants,
-    required this.ohaThreads,
+    required this.loadThreads,
     this.requirePmu = false,
     required this.wsConnections,
     required this.wsSeconds,
@@ -300,12 +300,12 @@ final class Sweep {
   }
 
   /// The SDKs the Dart targets run on. Each has its dart first in PATH,
-  /// the certificates of the servers and, over veth, the oha of the client
+  /// the certificates of the servers and, over veth, the zrk of the client
   /// side in its environment.
   List<Sdk> _selectSdks() {
     final base = {...Platform.environment, 'RELIC_TEST_CERTS': certs};
-    final oha = net.ohaCommand(base);
-    if (oha != null) base['BENCH_OHA'] = oha;
+    final zrk = net.zrkCommand(base);
+    if (zrk != null) base['BENCH_ZRK'] = zrk;
     final repository = p.normalize(p.join(package, '..', '..'));
     if (settings.variants.isNotEmpty) {
       return [
@@ -392,7 +392,7 @@ final class Sweep {
     }
     final paranoid = File('/proc/sys/kernel/perf_event_paranoid');
     lines
-      ..add('oha: ${await version(['oha', '--version'])}')
+      ..add('zrk: ${await version(['zrk', '--version'])}')
       ..add(
         'zig: '
         '${await outputOf(['zig', 'version'], environment: first, workingDirectory: p.join(package, '..', 'relic_native'), mergeStderr: true)}',
@@ -817,7 +817,7 @@ final class Sweep {
     File(p.join(_out, 'machine.txt')).writeAsStringSync(
       'ws: ${settings.wsConnections} connections, ${settings.wsSeconds} s '
       'after ${settings.wsWarmup} s warm-up, ${settings.wsIdle} idle, '
-      '${settings.ohaThreads} client threads\n',
+      '${settings.loadThreads} client threads\n',
       mode: FileMode.append,
     );
     // The servers hold up to wsIdle sockets each.
@@ -917,7 +917,7 @@ final class Sweep {
       '--url=$url/',
       '--connect=${net.host}',
       '--ca=${p.join(certs, 'ca_cert.pem')}',
-      '--threads=${settings.ohaThreads}',
+      '--threads=${settings.loadThreads}',
       '--pid=${listeners.firstOrNull ?? ''}',
     ];
     final napi = net.isVeth ? file('napi.txt') : null;

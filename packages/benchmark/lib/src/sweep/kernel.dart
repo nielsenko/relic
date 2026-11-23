@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 
 import '../browser_headers.dart';
 import '../cpu.dart';
+import '../zrk.dart';
 import 'kernel_report.dart';
 import 'net.dart';
 import 'processes.dart';
@@ -19,8 +20,8 @@ final class KernelSettings {
   /// Seconds of each load window.
   final int window;
 
-  /// Worker threads of oha.
-  final int ohaThreads;
+  /// Threads of zrk.
+  final int loadThreads;
 
   /// The servers to run, all when empty. A name matches with or without
   /// its `@<sdk>` suffix.
@@ -44,7 +45,7 @@ final class KernelSettings {
   KernelSettings({
     required this.out,
     required this.window,
-    required this.ohaThreads,
+    required this.loadThreads,
     required this.only,
     required this.net,
     required this.vethQueues,
@@ -106,7 +107,7 @@ final class Kernel {
   >
   _sdks;
   late final List<String> _sudo;
-  late final List<String> _oha;
+  late final List<String> _zrk;
   late final String _events;
   late final bool _perfOk;
   late final bool _counted;
@@ -122,11 +123,6 @@ final class Kernel {
       _file('progress.log').writeAsStringSync('$line\n', mode: FileMode.append);
   void _machine(String line) =>
       _file('machine.txt').writeAsStringSync('$line\n', mode: FileMode.append);
-
-  /// The browser head of lib/src/browser_headers.dart, as oha arguments.
-  static final List<String> _browserHead = [
-    for (final header in browserHeaders) ...['-H', header],
-  ];
 
   Future<int> run() async {
     if (!Platform.isLinux) {
@@ -156,8 +152,8 @@ final class Kernel {
           : const [];
       _selectSdks();
       final first = _sdks.first.environment;
-      final oha = which('oha', environment: first) ?? 'oha';
-      _oha = net.clientSide([oha], first);
+      final zrk = which('zrk', environment: first) ?? 'zrk';
+      _zrk = net.clientSide([zrk], first);
       await _prepareSdks();
       await _writeMachine();
       await _probePerf();
@@ -311,13 +307,13 @@ final class Kernel {
       for (final sdk in _sdks)
         'dart${sdk.label.isEmpty ? '' : ' ${sdk.label}'}: '
             '${await outputOf(['dart', '--version'], environment: sdk.environment, mergeStderr: true)}',
-      'oha: ${await outputOf(['oha', '--version'], environment: first, mergeStderr: true)}',
+      'zrk: ${await outputOf(['zrk', '--version'], environment: first, mergeStderr: true)}',
       'perf: ${await firstLine([..._sudo, 'perf', '--version'])}',
       'strace: ${await firstLine(['strace', '-V'])}',
       'clock ticks: ${await outputOf(['getconf', 'CLK_TCK'])}',
       'window: ${settings.window}',
-      'load: oha, 64 connections, ${settings.ohaThreads} threads, '
-          '${_browserHead.length} header arguments for headers',
+      'load: zrk closed loop, 64 connections, ${settings.loadThreads} '
+          'threads, ${browserHeaders.length} headers for headers',
       'ptrace_scope: ${kernelSetting('/proc/sys/kernel/yama/ptrace_scope')}',
       'perf_event_paranoid: '
           '${kernelSetting('/proc/sys/kernel/perf_event_paranoid')}',
@@ -419,20 +415,18 @@ final class Kernel {
     await Future<void>.delayed(const Duration(seconds: 2));
   }
 
-  /// The oha command for one window of [seconds] on [route].
-  List<String> _ohaFor(String route, int seconds) => [
-    ..._oha,
-    '--no-tui',
-    '--output-format',
-    'json',
-    '-c',
-    '64',
-    '-z',
-    '${seconds}s',
-    '--worker-threads',
-    '${settings.ohaThreads}',
-    if (route == 'headers') ..._browserHead,
-    '$_url/$route',
+  /// The zrk command for one closed-loop window of [seconds] on [route],
+  /// with its JSON report in [report].
+  List<String> _zrkFor(String route, int seconds, String report) => [
+    ..._zrk,
+    ...zrkArguments(
+      '$_url/$route',
+      connections: 64,
+      seconds: seconds,
+      report: report,
+      headers: route == 'headers' ? browserHeaders : const [],
+      threads: settings.loadThreads,
+    ),
   ];
 
   /// Runs each Dart server once per SDK, from the SDK's copy of this
@@ -504,7 +498,7 @@ final class Kernel {
     Future<int> window(
       List<String> command,
       String stem, {
-      String output = 'json',
+      String output = 'out',
     }) => runLogged(
       command,
       stdoutFile: _file('$name.$stem.$output'),
@@ -512,17 +506,19 @@ final class Kernel {
       environment: environment,
     );
     for (final route in const ['plaintext', 'headers']) {
-      await Process.run(
-        _ohaFor(route, 5).first,
-        _ohaFor(route, 5).sublist(1),
-        environment: environment,
+      final warm = _zrkFor(route, 5, '/dev/null');
+      await Process.run(warm.first, warm.sublist(1), environment: environment);
+      // The load of a window, its report in <name>.<route>.<window>.json.
+      List<String> zrk(String window) => _zrkFor(
+        route,
+        settings.window,
+        _file('$name.$route.$window.json').path,
       );
-      final oha = _ohaFor(route, settings.window);
       final before = ticks();
       final napiBefore = napiDevice == null ? '' : ' ${net.napiTicks()}';
       await runLogged(
-        oha,
-        stdoutFile: _file('$name.$route.time.json'),
+        zrk('time'),
+        stdoutFile: _file('$name.$route.time.out'),
         passStderr: true,
         environment: environment,
       );
@@ -546,11 +542,11 @@ final class Kernel {
           '-o',
           _file('$name.$route.counters.csv').path,
           '--',
-          ...oha,
+          ...zrk('counters'),
         ], '$route.counters');
       }
       if (_sampled) {
-        await _sample(name, route, pid, oha, environment);
+        await _sample(name, route, pid, zrk('record'), environment);
       }
       if (_perfOk) {
         await window([
@@ -566,7 +562,7 @@ final class Kernel {
           '-o',
           _file('$name.$route.perf.csv').path,
           '--',
-          ...oha,
+          ...zrk('perf'),
         ], '$route.perf');
       }
       if (_strace) {
@@ -582,8 +578,8 @@ final class Kernel {
         ], _file('$name.$route.strace.err'));
         await Future<void>.delayed(const Duration(seconds: 2));
         await runLogged(
-          oha,
-          stdoutFile: _file('$name.$route.strace.json'),
+          zrk('strace'),
+          stdoutFile: _file('$name.$route.strace.out'),
           passStderr: true,
           environment: environment,
         );
@@ -601,7 +597,7 @@ final class Kernel {
     String name,
     String route,
     int pid,
-    List<String> oha,
+    List<String> load,
     Map<String, String> environment,
   ) async {
     final stem = '$name.$route';
@@ -622,9 +618,9 @@ final class Kernel {
         '-o',
         data,
         '--',
-        ...oha,
+        ...load,
       ],
-      stdoutFile: _file('$stem.record.json'),
+      stdoutFile: _file('$stem.record.out'),
       stderrFile: errors,
       environment: environment,
     );

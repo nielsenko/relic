@@ -136,7 +136,7 @@ enum GcpCreateOption<V> implements OptionDefinition<V> {
       argName: 'sweep-env',
       envName: 'SWEEP_ENV',
       helpText: 'The environment of the sweep on the instance',
-      defaultsTo: 'QUIET=0 PAUSE=5 OHA_THREADS=8 NET=veth',
+      defaultsTo: 'QUIET=0 PAUSE=5 LOAD_THREADS=8 NET=veth',
     ),
   ),
   sweepOnly(

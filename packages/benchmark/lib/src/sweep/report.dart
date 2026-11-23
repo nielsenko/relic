@@ -316,7 +316,7 @@ List<Map<String, dynamic>> _readMeasurements(File file) =>
     )
     ..write(
       '\nThe same routes over HTTPS, TLS 1.3 with the relic_native test '
-      'certificate, from the same sweep. oha keeps its 64 connections open, '
+      'certificate, from the same sweep. zrk keeps its 64 connections open, '
       'so the cost is per record, not per handshake.\n\n',
     )
     ..write('$tableHead\n${tableOf(tls: true)}')
@@ -402,10 +402,10 @@ String? _zigRef(File zon, String dependency) {
   return match?.group(1);
 }
 
-/// The texts of the template's MACHINESHORT, MACHINE, NETWORK, OHAVERSION,
-/// OHATHREADS, SOFTWARE and BASELINES from the sweep's machine.txt and the
-/// baselines in [package]. BASELINES is the part the page with Relic and
-/// shelf only leaves out.
+/// The texts of the template's MACHINESHORT, MACHINE, NETWORK, LOADTOOL,
+/// LOADNAME, LOADNOTE, LOADTHREADS, SOFTWARE and BASELINES from the sweep's
+/// machine.txt and the baselines in [package]. BASELINES is the part the
+/// page with Relic and shelf only leaves out.
 Map<String, String> _setup(Directory sweep, Directory package) {
   final m = _machine(sweep);
   String? value(String key) => m[key]?.isEmpty ?? true ? null : m[key];
@@ -437,9 +437,10 @@ Map<String, String> _setup(Directory sweep, Directory package) {
             '${veth == null ? '' : ': servers on CPUs ${veth[1]}, load tools on ${veth[2]}, the NAPI threads of each end on ${veth[3]} and ${veth[4]}'}.'
       : 'Servers and load tools run on this one machine over loopback.';
   final load = value('load') ?? '';
+  // Sweeps before the move to zrk name oha and --oha-threads.
   final threads =
-      RegExp(r'--oha-threads=(\d+)').firstMatch(load)?.group(1) ?? '4';
-  final oha = value('oha') ?? 'oha';
+      RegExp(r'--(?:load|oha)-threads=(\d+)').firstMatch(load)?.group(1) ?? '4';
+  final tool = value('zrk') ?? value('oha') ?? 'zrk';
   final baselines = p.join(package.path, 'baselines');
   final hyperLock = File(p.join(baselines, 'hyper', 'Cargo.lock'));
   final zon = File(p.join(baselines, 'dusty', 'build.zig.zon'));
@@ -451,8 +452,14 @@ Map<String, String> _setup(Directory sweep, Directory package) {
     'MACHINESHORT': short.isEmpty ? 'one machine' : short,
     'MACHINE': machine.isEmpty ? '' : '$machine.',
     'NETWORK': network,
-    'OHAVERSION': oha,
-    'OHATHREADS': threads,
+    'LOADTOOL': tool,
+    'LOADNAME': tool.split(' ').first,
+    'LOADNOTE': tool.startsWith('zrk')
+        ? ' In open loop zrk paces each connection to its share of the rate '
+              'and measures every latency from when the request was due, so a '
+              'server that falls behind shows it in the tail.'
+        : '',
+    'LOADTHREADS': threads,
     'SOFTWARE': [
       version('dart', 'Dart').trim(),
       if (relic != null) 'Relic at $relic.',

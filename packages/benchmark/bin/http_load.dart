@@ -1,7 +1,7 @@
-// HTTP load through a RelicApp on each adapter, driven by oha from its own
+// HTTP load through a RelicApp on each adapter, driven by zrk from its own
 // process. For every target and workload, a closed-loop run finds the
 // saturation rate, then open-loop runs at fractions of it report the
-// latency percentiles. Needs `oha` on the PATH.
+// latency percentiles. Needs `zrk` on the PATH.
 //
 //   dart run bin/http_load.dart --targets=io,native,native4,shelf \
 //       --workloads=plaintext,json,headers,browser,alloc,mixed \
@@ -22,11 +22,12 @@
 // bare Bun.serve and on dusty, a Zig server on the zio relic_native runs
 // on.
 //
-// `--oha-threads=N` sizes oha's tokio pool, 4 by default, so a server of
-// four isolates and the load tool together stay within eight cores.
+// `--load-threads=N` sizes zrk's pool of threads, 4 by default, so a
+// server of four isolates and the load tool together stay within eight
+// cores.
 //
 // `--tls` serves the local targets over TLS with relic_native's test
-// certificates. oha does not verify an https URL.
+// certificates. zrk does not verify an https URL.
 //
 // `--napi-device=vsrv` meters the NAPI threads of network device vsrv
 // beside the server, as the server's share of the network stack, when the
@@ -48,10 +49,10 @@ import 'package:benchmark/src/browser_headers.dart';
 import 'package:benchmark/src/counters.dart';
 import 'package:benchmark/src/cpu.dart';
 import 'package:benchmark/src/load_app.dart';
-import 'package:benchmark/src/oha.dart';
 import 'package:benchmark/src/options.dart';
 import 'package:benchmark/src/serve.dart';
 import 'package:benchmark/src/shelf_server.dart';
+import 'package:benchmark/src/zrk.dart';
 import 'package:config/config.dart';
 
 final class Workload {
@@ -180,7 +181,7 @@ enum LoadOption<V> implements OptionDefinition<V> {
   connections(
     IntOption(
       argName: 'connections',
-      helpText: 'Connections oha keeps open',
+      helpText: 'Connections zrk keeps open',
       defaultsTo: 64,
       min: 1,
     ),
@@ -215,10 +216,10 @@ enum LoadOption<V> implements OptionDefinition<V> {
     ),
   ),
 
-  ohaThreads(
+  loadThreads(
     IntOption(
-      argName: 'oha-threads',
-      helpText: 'Worker threads of the oha runtime',
+      argName: 'load-threads',
+      helpText: 'Threads of zrk',
       defaultsTo: 4,
       min: 1,
     ),
@@ -283,7 +284,7 @@ Future<void> main(List<String> args) async {
   final seconds = config.value(LoadOption.seconds);
   final loads = config.value(LoadOption.loads);
   final saturationRuns = config.value(LoadOption.saturationRuns);
-  final ohaThreads = config.value(LoadOption.ohaThreads);
+  final loadThreads = config.value(LoadOption.loadThreads);
   final tls = config.value(LoadOption.tls);
   final napiDevice = config.optionalValue(LoadOption.napiDevice);
   final out = config.optionalValue(LoadOption.out);
@@ -313,19 +314,19 @@ Future<void> main(List<String> args) async {
     final napi = napiDevice == null ? null : _napiMeter(napiDevice);
     try {
       // One warm-up so JIT and caches are settled before the first number.
-      await _oha(base, workloads.first, connections, 2, null, ohaThreads);
+      await _zrk(base, workloads.first, connections, 2, null, loadThreads);
       for (final workload in workloads) {
         final closedLoop = <int>[];
         final closedLoopInstructions = <double>[];
         for (var run = 0; run < saturationRuns; run++) {
           counters?.begin();
-          final saturation = await _oha(
+          final saturation = await _zrk(
             base,
             workload,
             connections,
             seconds,
             null,
-            ohaThreads,
+            loadThreads,
           );
           final use = counters?.end(saturation.responses);
           closedLoop.add(saturation.rps.round());
@@ -346,13 +347,13 @@ Future<void> main(List<String> args) async {
           await meter?.begin();
           await napi?.begin();
           counters?.begin();
-          final run = await _oha(
+          final run = await _zrk(
             base,
             workload,
             connections,
             seconds,
             offered,
-            ohaThreads,
+            loadThreads,
           );
           final use = counters?.end(run.responses);
           final cores = await meter?.end();
@@ -400,7 +401,7 @@ Future<void> main(List<String> args) async {
     connections,
     seconds,
     saturationRuns,
-    ohaThreads,
+    loadThreads,
   );
   stdout.write(table);
   if (out != null) {
@@ -493,25 +494,25 @@ Future<Server> _start(
   );
 }
 
-/// One oha run of [workload] against [base].
+/// One zrk run of [workload] against [base].
 ///
 /// A null [rate] is a closed loop at [connections] in flight, otherwise an
 /// open loop at that many requests per second.
-Future<OhaResult> _oha(
+Future<ZrkResult> _zrk(
   String base,
   Workload workload,
   int connections,
   int seconds,
   int? rate,
   int threads,
-) => runOha(
+) => runZrk(
   '$base${workload.path}',
   connections: connections,
   seconds: seconds,
   rate: rate,
   headers: workload.headers,
   body: workload.body,
-  workerThreads: threads,
+  threads: threads,
 );
 
 String _markdown(
@@ -519,14 +520,14 @@ String _markdown(
   int connections,
   int seconds,
   int saturationRuns,
-  int ohaThreads,
+  int loadThreads,
 ) {
   final napi = results.any((m) => m.napiCores != null);
   final counted = results.any((m) => m.counters != null);
   final kernel = results.any((m) => m.counters?.kernelInstructions != null);
   final buffer = StringBuffer()
     ..writeln(
-      '$connections connections from oha on $ohaThreads threads, '
+      '$connections connections from zrk on $loadThreads threads, '
       '${seconds}s per run, saturation the mean of $saturationRuns closed-loop runs, '
       'latency in ms, cores the CPU time the server process used over the '
       'run divided by its wall time'

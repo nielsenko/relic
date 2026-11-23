@@ -8,7 +8,7 @@
 #   relic-branch  the branch to sweep, chore-benchmark-sweep by default
 #   relic-patch   a patch to apply to the clone, none by default
 #   relic-bucket  the bucket for the results, relic-bench-nights by default
-#   sweep-env     environment for the sweep, "QUIET=0 PAUSE=5 OHA_THREADS=8 NET=veth"
+#   sweep-env     environment for the sweep, "QUIET=0 PAUSE=5 LOAD_THREADS=8 NET=veth"
 #                 by default
 #   sweep-only    a space-separated list of targets, all by default
 #   sweep-script  the steps to run in packages/benchmark, separated by
@@ -38,7 +38,7 @@ REPO=$(md relic-repo https://github.com/nielsenko/relic.git)
 BRANCH=$(md relic-branch chore-benchmark-sweep)
 PATCH=$(md relic-patch "")
 BUCKET=$(md relic-bucket relic-bench-nights)
-ENVS=$(md sweep-env "QUIET=0 PAUSE=5 OHA_THREADS=8 NET=veth")
+ENVS=$(md sweep-env "QUIET=0 PAUSE=5 LOAD_THREADS=8 NET=veth")
 ONLY=$(md sweep-only "")
 SCRIPT=$(md sweep-script "sweep micro")
 DARTS=$(md dart-sdks 3.14.1)
@@ -75,8 +75,8 @@ if [[ -e $DONE ]]; then
 fi
 ARCH=$(uname -m)
 case $ARCH in
-  x86_64) OHA_ARCH=amd64 DART_ARCH=x64 ;;
-  aarch64) OHA_ARCH=arm64 DART_ARCH=arm64 ;;
+  x86_64) DART_ARCH=x64 ;;
+  aarch64) DART_ARCH=arm64 ;;
   *) echo "unsupported arch $ARCH"; exit 1 ;;
 esac
 
@@ -97,7 +97,12 @@ DART=/opt/dart-${DARTS%% *}/bin
 # One SDK runs the sweep as before, with no copies of the repository.
 [[ $DARTS == *" "* ]] || SDKS=""
 curl -sSL "https://github.com/marler8997/anyzig/releases/download/v2026_10_23/anyzig-${ARCH}-linux.tar.gz" | tar xz -C /usr/local/bin zig
-curl -sSL -o /usr/local/bin/oha "https://github.com/hatoo/oha/releases/download/v1.17.0/oha-linux-${OHA_ARCH}" && chmod +x /usr/local/bin/oha
+# zrk, the load tool, checked against the release's SHA256SUMS.
+ZRK=zrk-3.0.5-${ARCH}-linux.tar.gz
+curl -fsSL -o "/tmp/$ZRK" "https://github.com/zoxy-io/zrk/releases/download/v3.0.5/$ZRK"
+curl -fsSL -o /tmp/zrk.sums https://github.com/zoxy-io/zrk/releases/download/v3.0.5/SHA256SUMS.txt
+(cd /tmp && grep " $ZRK\$" zrk.sums | sha256sum -c -)
+tar -xzf "/tmp/$ZRK" -C /usr/local/bin zrk
 curl -fsSL https://deno.land/install.sh | DENO_INSTALL=/usr/local sh -s v2.9.8
 curl -fsSL https://bun.sh/install | BUN_INSTALL=/usr/local bash -s bun-v1.4.5
 id bench >/dev/null 2>&1 || useradd -m -s /bin/bash bench

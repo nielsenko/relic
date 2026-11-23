@@ -1,10 +1,10 @@
-// Starts a server command, drives it with oha, and reports the server's
+// Starts a server command, drives it with zrk, and reports the server's
 // CPU time per request as user and system time, read from the kernel's
 // per-process counters over the load window, and the instructions and
 // cycles retired per request in thousands, which do not move with the
 // machine's load the way time does. macOS always counts them. Linux needs
 // a PMU and kernel.perf_event_paranoid at 2 or below, at 1 or below to
-// count kernel mode with user mode. Needs `oha` on the PATH.
+// count kernel mode with user mode. Needs `zrk` on the PATH.
 //
 //   dart run bin/cpu_bench.dart -- dart run bin/load_serve.dart native 1
 //   dart run bin/cpu_bench.dart --connections=64 --seconds=10 -- ./hello 4
@@ -19,8 +19,8 @@ import 'dart:io';
 
 import 'package:benchmark/src/browser_headers.dart';
 import 'package:benchmark/src/counters.dart';
-import 'package:benchmark/src/oha.dart';
 import 'package:benchmark/src/options.dart';
+import 'package:benchmark/src/zrk.dart';
 import 'package:config/config.dart';
 import 'package:ffi/ffi.dart';
 
@@ -28,7 +28,7 @@ enum CpuBenchOption<V> implements OptionDefinition<V> {
   connections(
     IntOption(
       argName: 'connections',
-      helpText: 'Connections oha keeps open',
+      helpText: 'Connections zrk keeps open',
       defaultsTo: 128,
       min: 1,
     ),
@@ -114,10 +114,10 @@ Future<void> main(List<String> args) async {
     await Future<void>.delayed(const Duration(seconds: 1));
     pids = await _processTree(server.pid);
     counters = CounterMeter.open(pids);
-    await runOha(url, connections: connections, seconds: 2, headers: headers);
+    await runZrk(url, connections: connections, seconds: 2, headers: headers);
     final before = await _cpuTime(pids);
     counters?.begin();
-    final result = await runOha(
+    final result = await runZrk(
       url,
       connections: connections,
       seconds: seconds,
@@ -180,7 +180,7 @@ Future<void> _waitForServer(String url) async {
 ///
 /// Refused, or closed while a server is still starting, is a no. So is no
 /// answer within two seconds, which is what a plain server gives an https
-/// URL. A server's certificate goes unchecked, as oha leaves it.
+/// URL. A server's certificate goes unchecked, as zrk leaves it.
 Future<bool> _answers(String url) async {
   final client = HttpClient()..badCertificateCallback = (_, _, _) => true;
   try {

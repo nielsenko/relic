@@ -42,7 +42,7 @@ List<String> _words(String line) => [
 /// time window, with the server's NAPI threads in a column of their own
 /// when the run went over veth. System calls per request come from perf's
 /// per-thread tracepoint counts and from strace's summary, each over a
-/// window of its own, divided by the requests oha completed in that
+/// window of its own, divided by the requests zrk completed in that
 /// window. strace stops the server at every call, so its windows run
 /// slower and batch less.
 String kernelReport(Directory out) {
@@ -53,19 +53,18 @@ String kernelReport(Directory out) {
     return text.isEmpty ? null : text;
   }
 
-  /// The responses oha counted in a window, and its request rate.
+  /// The responses zrk counted in a window, and its request rate.
   (int, double)? requests(String name) {
     final text = read(name);
     if (text == null) return null;
     final data = jsonDecode(text) as Map<String, dynamic>;
-    final statuses = data['statusCodeDistribution'] as Map<String, dynamic>;
+    final statuses = data['status_codes'] as Map<String, dynamic>;
     var responses = 0;
     for (final count in statuses.values) {
       responses += count as int;
     }
     if (responses == 0) return null;
-    final summary = data['summary'] as Map<String, dynamic>;
-    return (responses, (summary['requestsPerSec'] as num).toDouble());
+    return (responses, (data['achieved_rate'] as num).toDouble());
   }
 
   /// The count and the thread of a `perf stat --per-thread -x,` line whose

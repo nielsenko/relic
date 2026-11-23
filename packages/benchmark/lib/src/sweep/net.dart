@@ -59,7 +59,7 @@ final class Net {
   /// The CPUs of the servers, as taskset writes a list.
   String get serverCpus => '0-${serverCpuCount - 1}';
 
-  /// The CPUs of the load tools, http_load, oha, the WebSocket client and
+  /// The CPUs of the load tools, http_load, zrk, the WebSocket client and
   /// the thread sampler, as taskset writes a list.
   String get clientCpus => '${_workCpus ~/ 2}-${_workCpus - 1}';
 
@@ -146,7 +146,7 @@ final class Net {
           environment,
           extra: {
             'BENCH_ADDRESS': host,
-            'BENCH_OHA': ?environment['BENCH_OHA'],
+            'BENCH_ZRK': ?environment['BENCH_ZRK'],
             'RELIC_BENCH_PG_HOST': ?environment['RELIC_BENCH_PG_HOST'],
           },
         )
@@ -167,13 +167,13 @@ final class Net {
       ? inNamespace('cli', ['taskset', '-c', clientCpus, ...command])
       : ['sudo', '-n', ...command];
 
-  /// What runs oha on the client side, for `BENCH_OHA`, or null on the
-  /// loopback, where http_load finds oha on its PATH.
-  String? ohaCommand(Map<String, String> environment) {
+  /// What runs zrk on the client side, for `BENCH_ZRK`, or null on the
+  /// loopback, where http_load finds zrk on its PATH.
+  String? zrkCommand(Map<String, String> environment) {
     if (!isVeth) return null;
-    final oha = which('oha', environment: environment);
-    if (oha == null) return null;
-    return jsonEncode(clientSide([oha], environment));
+    final zrk = which('zrk', environment: environment);
+    if (zrk == null) return null;
+    return jsonEncode(clientSide([zrk], environment));
   }
 
   /// The packets the NAPI of a veth end has taken, the server's end by

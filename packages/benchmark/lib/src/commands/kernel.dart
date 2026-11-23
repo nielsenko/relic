@@ -28,11 +28,11 @@ enum KernelOption<V> implements OptionDefinition<V> {
       min: 1,
     ),
   ),
-  ohaThreads(
+  loadThreads(
     IntOption(
-      argName: 'oha-threads',
-      envName: 'OHA_THREADS',
-      helpText: 'Worker threads of oha',
+      argName: 'load-threads',
+      envName: 'LOAD_THREADS',
+      helpText: 'Threads of zrk',
       defaultsTo: 4,
       min: 1,
     ),
@@ -52,7 +52,7 @@ enum KernelOption<V> implements OptionDefinition<V> {
       argName: 'net',
       envName: 'NET',
       helpText:
-          'lo, or veth to run the servers and oha on the two ends of a '
+          'lo, or veth to run the servers and zrk on the two ends of a '
           'veth pair, as in the sweep',
       defaultsTo: 'lo',
       allowedValues: ['lo', 'veth'],
@@ -127,7 +127,7 @@ final class KernelCommand extends BetterCommand<KernelOption<dynamic>, void> {
               p.join(package, 'kernel-out'),
         ).absolute,
         window: commandConfig.value(KernelOption.window),
-        ohaThreads: commandConfig.value(KernelOption.ohaThreads),
+        loadThreads: commandConfig.value(KernelOption.loadThreads),
         only: {
           for (final name
               in commandConfig.value(KernelOption.only).split(RegExp(r'\s+')))
