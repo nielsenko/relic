@@ -4,6 +4,8 @@ import 'dart:math' as math;
 
 import 'package:path/path.dart' as p;
 
+import '../hdr.dart';
+
 /// Combines the http_load results of [rounds] rounds in `round-<n>` of
 /// [out] into the files a sweep of one round has, at the same paths in
 /// [out], and returns how many it combined.
@@ -58,9 +60,14 @@ List<Map<String, dynamic>>? _measurements(File file) {
 
 const _meanFields = [
   'rps',
+  'meanMs',
   'p50Ms',
+  'p75Ms',
+  'p90Ms',
   'p99Ms',
   'p999Ms',
+  'p9999Ms',
+  'rateRatio',
   'cores',
   'napiCores',
   'instructionsPerRequest',
@@ -95,6 +102,15 @@ List<Map<String, dynamic>> combineMeasurements(
         for (final field in _meanFields)
           if (same.every((m) => m[field] is num))
             field: _mean([for (final m in same) m[field] as num]),
+        if (same.every((m) => m['histogram'] is String))
+          ..._mergedLatencies([for (final m in same) m['histogram'] as String]),
+        for (final field in ['maxMs', 'scheduleLagMs'])
+          if (same.every((m) => m[field] is num))
+            field: same.map((m) => m[field] as num).reduce(math.max),
+        if (same.every((m) => m['errorsByKind'] is Map))
+          'errorsByKind': _sumByKind([
+            for (final m in same) m['errorsByKind'] as Map<String, dynamic>,
+          ]),
         'errors': same.fold<num>(0, (sum, m) => sum + (m['errors'] as num)),
         'nonOk': same.fold<num>(0, (sum, m) => sum + (m['nonOk'] as num)),
         for (final field in _pooledFields)
@@ -118,6 +134,34 @@ List<Map<String, dynamic>> combineMeasurements(
         ],
       },
   ];
+}
+
+/// The sum of each kind's count over [counts].
+Map<String, num> _sumByKind(List<Map<String, dynamic>> counts) {
+  final sums = <String, num>{};
+  for (final byKind in counts) {
+    for (final MapEntry(:key, :value) in byKind.entries) {
+      sums[key] = (sums[key] ?? 0) + (value as num);
+    }
+  }
+  return sums;
+}
+
+/// The latency fields of the merge of [histograms], one a round, read as
+/// zrk reads its own: a round's percentiles do not average into the
+/// rounds' percentile, but their histograms merge exactly.
+Map<String, Object> _mergedLatencies(List<String> histograms) {
+  final merged = Histogram.merge(histograms.map(Histogram.decode));
+  double ms(double percentile) => merged.valueAt(percentile) / 1000;
+  return {
+    'p50Ms': ms(50),
+    'p75Ms': ms(75),
+    'p90Ms': ms(90),
+    'p99Ms': ms(99),
+    'p999Ms': ms(99.9),
+    'p9999Ms': ms(99.99),
+    'histogram': merged.encode(),
+  };
 }
 
 double _mean(List<num> values) =>

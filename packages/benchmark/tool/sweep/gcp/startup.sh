@@ -181,6 +181,8 @@ cp /var/log/relic-sweep.log "$OUT/"
 echo "=== upload $(date)"
 RUN=$(date -u +%Y%m%d-%H%M)-$TYPE
 cd "$OUT"
+# zrk's own reports, a few per run, go up as one archive.
+find . -type d -name '*.zrk' -print0 | tar -czf zrk.tar.gz --null -T - --remove-files
 find . -type f | sed 's#^\./##' | while read -r f; do upload "$f" "$RUN/$f"; done
 echo "results in gs://$BUCKET/$RUN/"
 touch "$DONE"

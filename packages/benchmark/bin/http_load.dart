@@ -87,12 +87,16 @@ final class Measurement {
   final String workload;
   final double load;
   final int offeredRps;
-  final double rps;
-  final double p50;
-  final double p99;
-  final double p999;
-  final int errors;
-  final int nonOk;
+
+  /// What zrk measured in the open-loop run.
+  final ZrkResult zrk;
+
+  double get rps => zrk.rps;
+  double get p50 => zrk.p50;
+  double get p99 => zrk.p99;
+  double get p999 => zrk.p999;
+  int get errors => zrk.failed;
+  int get nonOk => zrk.nonOk;
 
   /// Cores the server process kept busy on average, or null when its CPU
   /// time could not be read.
@@ -122,12 +126,7 @@ final class Measurement {
     required this.workload,
     required this.load,
     required this.offeredRps,
-    required this.rps,
-    required this.p50,
-    required this.p99,
-    required this.p999,
-    required this.errors,
-    required this.nonOk,
+    required this.zrk,
     required this.cores,
     required this.napiCores,
     required this.saturationRuns,
@@ -142,11 +141,20 @@ final class Measurement {
     'load': load,
     'offeredRps': offeredRps,
     'rps': rps,
+    'meanMs': zrk.mean,
     'p50Ms': p50,
+    'p75Ms': zrk.p75,
+    'p90Ms': zrk.p90,
     'p99Ms': p99,
     'p999Ms': p999,
+    'p9999Ms': zrk.p9999,
+    'maxMs': zrk.max,
+    'rateRatio': zrk.rateRatio,
+    'scheduleLagMs': zrk.scheduleLag,
     'errors': errors,
+    'errorsByKind': zrk.failedByKind,
     'nonOk': nonOk,
+    'histogram': zrk.histogram,
     'cores': ?cores,
     'napiCores': ?napiCores,
     'saturationRuns': saturationRuns,
@@ -302,6 +310,10 @@ Future<void> main(List<String> args) async {
       _workloads.firstWhere((w) => w.name == name),
   ];
   final results = <Measurement>[];
+  // Every zrk report and its rows of a second, beside the table.
+  final raw = out == null
+      ? null
+      : '${out.replaceAll(RegExp(r'\.md$'), '')}.zrk';
   for (final spec in targets) {
     final (target, url, _) = _split(spec);
     final server = url == null ? await _start(local[target]!, tls: tls) : null;
@@ -327,6 +339,9 @@ Future<void> main(List<String> args) async {
             seconds,
             null,
             loadThreads,
+            keep: raw == null
+                ? null
+                : '$raw/$target-${workload.name}-closed-${run + 1}',
           );
           final use = counters?.end(saturation.responses);
           closedLoop.add(saturation.rps.round());
@@ -354,6 +369,9 @@ Future<void> main(List<String> args) async {
             seconds,
             offered,
             loadThreads,
+            keep: raw == null
+                ? null
+                : '$raw/$target-${workload.name}-${(load * 100).round()}',
           );
           final use = counters?.end(run.responses);
           final cores = await meter?.end();
@@ -364,12 +382,7 @@ Future<void> main(List<String> args) async {
               workload: workload.name,
               load: load,
               offeredRps: offered,
-              rps: run.rps,
-              p50: run.p50,
-              p99: run.p99,
-              p999: run.p999,
-              errors: run.failed,
-              nonOk: run.nonOk,
+              zrk: run,
               cores: cores,
               napiCores: napiCores,
               saturationRuns: closedLoop,
@@ -497,15 +510,17 @@ Future<Server> _start(
 /// One zrk run of [workload] against [base].
 ///
 /// A null [rate] is a closed loop at [connections] in flight, otherwise an
-/// open loop at that many requests per second.
+/// open loop at that many requests per second. Given [keep], zrk's output
+/// is kept there, as [runZrk] describes.
 Future<ZrkResult> _zrk(
   String base,
   Workload workload,
   int connections,
   int seconds,
   int? rate,
-  int threads,
-) => runZrk(
+  int threads, {
+  String? keep,
+}) => runZrk(
   '$base${workload.path}',
   connections: connections,
   seconds: seconds,
@@ -513,6 +528,7 @@ Future<ZrkResult> _zrk(
   headers: workload.headers,
   body: workload.body,
   threads: threads,
+  keep: keep,
 );
 
 String _markdown(
