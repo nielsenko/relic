@@ -257,9 +257,9 @@ const httpTargets = <HttpTarget>[
 ];
 
 /// The targets of the async pass, which loads the routes whose handlers
-/// wait: /async, /timer and /db. Only load_serve has them, so only Relic
-/// and shelf run there. Their results go to the async directory of the
-/// output.
+/// wait, /async, /timer and /db, and /plaintext on the same server beside
+/// them. Only load_serve has them, so only Relic and shelf run there.
+/// Their results go to the async directory of the output.
 final asyncTargets = [
   for (final name in const [
     'relic-native',

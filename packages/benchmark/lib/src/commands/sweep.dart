@@ -48,7 +48,8 @@ enum SweepOption<V> implements OptionDefinition<V> {
       envName: 'ASYNC',
       helpText:
           '1 runs the async pass after the HTTP targets: /async, /timer '
-          'and /db on Relic and shelf at 1, 2 and 4 ways',
+          'and /db on Relic and shelf at 1, 2 and 4 ways, with /plaintext '
+          'on the same server to compare against',
       defaultsTo: 1,
       min: 0,
       max: 1,
@@ -60,7 +61,7 @@ enum SweepOption<V> implements OptionDefinition<V> {
       envName: 'ASYNC_LOAD',
       helpText:
           'The http_load arguments of the async pass. As LOAD, on the '
-          'async, timer and db workloads',
+          'plaintext, async, timer and db workloads',
     ),
   ),
   pgCtl(
@@ -273,7 +274,9 @@ final class SweepCommand extends BetterCommand<SweepOption<dynamic>, void> {
         asyncLoad: _words(
           load(
             SweepOption.asyncLoad,
-            pgCtl.isEmpty ? 'async,timer' : 'async,timer,db',
+            pgCtl.isEmpty
+                ? 'plaintext,async,timer'
+                : 'plaintext,async,timer,db',
           ),
         ),
         pgCtl: pgCtl,
